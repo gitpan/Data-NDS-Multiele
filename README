@@ -332,44 +332,8 @@ METHODS
         included, and all of them must match for an element to be included
         in the return set.
 
-        If $path refers to a hash structure, $cond may be any of the
-        following:
-
-           exists:VAL   : true if a key named VAL exists in the hash
-           empty:VAL    : true if a key named VAL is empty in the hash
-                          (it doesn't exist, or has an empty value)
-           empty        : true if the hash is empty
-
-        If $path refers to a list structure, $cond may be any of the
-        following:
-
-           empty        : true if the list is empty
-           defined:VAL  : true if the VAL'th (VAL is an integer) element
-                          is defined (indices start at 0)
-           empty:VAL    : true if the VAL'th (VAL is an integer) element
-                          is empty (or not defined)
-           contains:VAL : true if the list contains the element VAL
-           <:VAL        : true if the list has fewer than VAL (an integer)
-                          non-empty elements
-           <=:VAL
-           =:VAL
-           >:VAL
-           >=:VAL
-           VAL          : equivalent to contains:VAL
-
-        If $path refers to a scalar, $cond may be any of the following:
-
-           defined      : true if the value is defined
-           empty        : true if the value is empty
-           zero         : true if the value defined and evaluates to 0
-           true         : true if the value defined and evaluates to true
-           =:VAL        : true if the the value is VAL
-           member:VAL:VAL:...
-                        : true if the value is any of the values given (in
-                          this case, ALL of the colons (including the first
-                          one) can be replace by any other single character
-                          separator
-           VAL          : equivalent to =:VAL
+        The path/cond pairs are described in the test_conditions method of
+        the Data::NDS module.
 
         An error code is any argument is invalid.
 
@@ -381,9 +345,9 @@ METHODS
     value
     keys
     values
-           $val  = $obj->value($ele,$path [,$copy]);
-           @keys = $obj->keys($ele,$path [,$empty]);
-           @val  = $obj->values($ele,$path [,$empty,$copy]);
+           $val  = $obj->value($ele,$path [,$copy,$raw]);
+           @keys = $obj->keys($ele,$path [,$empty,$raw]);
+           @val  = $obj->values($ele,$path [,$empty,$copy,$raw]);
 
         These functions return data stored in an element.
 
@@ -407,6 +371,9 @@ METHODS
         non-empty values (or all values if $empty is non-zero) in the list,
         or the hash values. The values can be returned exactly as they are
         stored, or as a copy if $copy is non-zero.
+
+        If $raw is passed in, it works with the raw data instead of the full
+        value with defaults merged in.
 
     path_values
            %ele = $obj->path_values($path [,$empty,$copy]);
@@ -464,8 +431,8 @@ METHODS
         element is inserted into the list before that element and all higher
         elements are shifted to one higher position.
 
-        If the data file contains a hash, the $ele arguement is required and
-        is the name of a new element.
+        If the data file contains a hash, the $ele arguement is required to
+        be the name of a new or empty element.
 
     copy_ele
            $obj->copy_ele($ele [,$newele]);
@@ -483,7 +450,9 @@ METHODS
         the save method.
 
         If $val is not passed in, the given path will be erased from the
-        element.
+        element. It should be noted that the path is only removed from the
+        raw data. If a value is supplied by a default element, it is not
+        erased.
 
         If $val is passed in, it will be stored at the given path, provided
         it has the correct structure.
@@ -513,6 +482,10 @@ METHODS
         This will save all modified data sources. Although typically called
         at the end of a program, it can safely be called at any time.
 
+    Any method not documented here, especially those beginning with an
+    underscore (_), are for internal use only. Please do not use them.
+    Absolutely no support is offered for them.
+
 ERROR CODES
     Each error code produced by a method in the Data::NDS::Multiele module
     is prefixed by the characters "nme", followed by a 3 character operation
@@ -521,15 +494,22 @@ ERROR CODES
     The following error codes are used to identify problems working with
     files containing data:
 
-       nmefil01   File already set for this object. Only one
-                  file can be read for each Multiele object.
-       nmefil02   File not found.
-       nmefil03   File not readable.
-       nmefil04   File must contain a list or a hash.
-       nmefil05   Invalid element.
-       nmefil06   No file set.
-       nmefil07   Unable to backup data file.
+       nmefil01   A file has already been set for this object.
+                  Each Multiele object can read a single file.
+       nmefil02   The file was not found.
+       nmefil03   The file not readable.
+       nmefil04   The file is not a valid YAML file containing either
+                  a list or a hash.
+       nmefil05   An invalid element is in the file. An invalid
+                  element is one in which the structure differs
+                  from other elements read in previously.
+       nmefil06   An operation has been done before a file
+                  was set for the object.
+       nmefil07   Unable to backup data file before saving a new
+                  version.
        nmefil08   Unable to write data file.
+       nmefil09   It is not valid to specify ordered for a file
+                  containing a hash.  Ordered only applies to lists.
 
     The following error codes are related to default element handling:
 
@@ -539,7 +519,6 @@ ERROR CODES
                   used for a default element.
        nmedef03   An invalid ruleset specified for merging defaults.
        nmedef04   An invalid path specified in a default condition.
-       nmedef05   An invalid hash condition.
        nmedef06   An undefined/empty element may not be used as
                   a default.
 
@@ -576,6 +555,33 @@ ERROR CODES
        nmeerr03   An existing element is required when inserting
                   a new element into a list.
        nmeerr04   Attempt to delete an element outside of a list.
+
+BUGS AND QUESTIONS
+    If you find a bug in this module, please send it directly to me (see the
+    AUTHOR section below). Alternately, you can submit it on CPAN. This can
+    be done at the following URL:
+
+       http://rt.cpan.org/Public/Dist/Display.html?Name=Data-NDS-Multiele
+
+    Please do not use other means to report bugs (such as usenet newsgroups,
+    or forums for a specific OS or linux distribution) as it is impossible
+    for me to keep up with all of them.
+
+    When filing a bug report, please include the following information:
+
+    *   The version of the module you are using. You can get this by using
+        the script:
+
+                use Data::NDS::Multiele;
+                $obj = new Data::NDS::Multiele;
+                print $obj->version(),"\n";
+
+    *   The output from "perl -V"
+
+    If you have a problem using the module that perhaps isn't a bug (can't
+    figure out the syntax, etc.), you're in the right place. Go right back
+    to the top of this manual and start reading. If this still doesn't
+    answer your question, mail me directly.
 
 KNOWN PROBLEMS
     None at this point.

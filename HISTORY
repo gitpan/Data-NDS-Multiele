@@ -37,7 +37,11 @@ Version 3.00  2009-03-02
    Complete rewrite.
    Released as Data::NDS::Multiele.
 
-Version 3.01
+Version 3.10  2009-04-14
+   Cleaned up some of the internals.
+   Moved test_conditions to Data::NDS module (for use with other
+      Data::NDS::* modules)
+   Added raw option to value, keys, values.
 
 ########################################################################
 # BACKWARDS INCOMPATIBILITIES
@@ -55,4 +59,9 @@ Version 3.00
    (Data::NDS::Multisource) may be added which will contain most of
    the remaining functionality (though it will be backwards incompatible
    with the original version).
+
+Version 3.10
+   The API of the 3.10 series is backward compatible with 3.00, but
+   due to changes in the internals, the 3.10 Data::NDS module is
+   required for the 3.10 version of other Data::NDS::* modules.
 

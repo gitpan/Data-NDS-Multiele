@@ -55,6 +55,10 @@ g /dh1/a ~ def1a _blank_
 
 h /dh1/a ~ valHa _blank_
 
+e /dh1/a 0 1 ~ _undef_ nmeacc04
+
+h /dh1/a 0 1 ~ valHa _blank_
+
 ";
 
 

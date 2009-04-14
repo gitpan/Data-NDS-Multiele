@@ -45,6 +45,8 @@ f /dh1 ~ valFa def1b _blank_
 
 g /dh1 ~ def1a valGb _blank_
 
+g /dh1 0 0 1 ~ valGb _blank_
+
 h /dh1 ~ valHa valHb _blank_
 
 a /h1 ~ _blank_

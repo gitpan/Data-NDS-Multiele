@@ -11,9 +11,6 @@ package Data::NDS::Multiele;
 # TODO
 ###############################################################################
 
-# Add DESC files which store a complete description of the structure
-# (including path descriptions) which can be read in.
-
 ###############################################################################
 
 require 5.000;
@@ -24,7 +21,7 @@ use Data::NDS;
 use Storable qw(dclone);
 
 use vars qw($VERSION);
-$VERSION = "3.00";
+$VERSION = "3.10";
 
 ###############################################################################
 # BASE METHODS
@@ -73,12 +70,10 @@ sub new {
 
    # Get the ordered argument (if any).
 
-   my $ordered = "";
+   my $ordered = 0;
    if ($file) {
-      $ordered = 0;
       if (@args  &&  $args[0] eq "1") {
-         $ordered = 1;
-         shift(@args);
+         $ordered = shift(@args);
       }
    }
 
@@ -90,29 +85,35 @@ sub new {
    }
 
    my $self = {
-               "nds"       => $NDS, # Data::NDS object
-               "file"      => "",   # Path to YAML file
-               "list"      => "",   # 1 if the data is a list.
-               "ordered"   => 0,    # 1 if it is an ordered list.
-               "def"       => [],       # List of default elements.
-                                        #   [ [ [NAME] ELE1 RULESET COND... ]
-                                        #     [ [NAME] ELE2 RULESET COND... ] ]
-               "raw"       => undef,    # hash/list of elements
-               "data"      => undef,    # hash/list of full elements
+               "nds"       => $NDS,  # Data::NDS object
+               "file"      => "",    # Path to YAML file
+               "list"      => "",    # 1 if the data is a list.
+               "ordered"   => 0,     # 1 if it is an ordered list.
+               "def"       => [],    # List of default elements.
+                                     #   [ [ [NAME] ELE1 RULESET COND... ]
+                                     #     [ [NAME] ELE2 RULESET COND... ] ]
+                                     # NAME is used only for hashes
+               "raw"       => undef, # hash/list of elements
+               "data"      => undef, # hash/list of full elements
                "err"       => "",
                "errmsg"    => "",
-               "elesx"     => [], # A list of all existing elements
-               "elesn"     => [], # A list of all non-empty elements
-               "eles"      => {}, # A hash of all elements. The value is:
-                                  #   0  : exists
-                                  #   1  : constructed
-                                  #   2  : known empty
-                                  #   3  : known non-empty
-               "status"    => 0,  # Status of data
-                                  #   0  : no checks
-                                  #   1  : existance checked
-                                  #   2  : all element constructed
-                                  #   3  : empty checked
+               "elesx"     => undef, # A list of all existing elements
+               "elesn"     => undef, # A list of all non-empty elements
+               "elesxh"    => {},    # A hash of { ELE => 1 } for existing elements
+                                     # Exactly equivalent to "elesx".
+               "elesnh"    => undef, # A hash of { ELE => 0/1 } for empty/not
+
+
+               "eles"      => {},    # A hash of all elements. The value is:
+                                     #   0  : exists
+                                     #   1  : constructed
+                                     #   2  : constructed, known empty
+                                     #   3  : constructed, known non-empty
+               "status"    => 0,     # Status of data
+                                     #   0  : no checks
+                                     #   1  : existance checked
+                                     #   2  : all element constructed
+                                     #   3  : empty checked
               };
    bless $self, $class;
 
@@ -196,10 +197,18 @@ sub file {
 
    my $ref = YAML::Syck::LoadFile($file);
    if (ref($ref) eq "HASH") {
-      $$self{"list"} = 0;
-      $ordered       = 0;
+      $$self{"list"}    = 0;
+      $$self{"ordered"} = 0;
+      $$self{"data"}    = {};
+      if ($ordered) {
+         $$self{"err"}    = "nmefil09";
+         $$self{"errmsg"} = "Ordered not valid for a file containing a hash: $file";
+         return;
+      }
    } elsif (ref($ref) eq "ARRAY") {
-      $$self{"list"} = 1;
+      $$self{"list"}    = 1;
+      $$self{"ordered"} = $ordered;
+      $$self{"data"}    = [];
    } else {
       $$self{"err"}    = "nmefil04";
       $$self{"errmsg"} = "File must contain a list or hash: $file";
@@ -252,9 +261,160 @@ sub file {
    # Store the data.
    #
 
-   $$self{"raw"}  = $ref;
-   $$self{"file"} = $file;
+   $$self{"raw"}   = $ref;
+   $$self{"file"}  = $file;
+   $$self{"def"}   = [];
    return;
+}
+
+###############################################################################
+# ELEMENT METHODS
+###############################################################################
+
+# Set a list of all existing or non-empty elements.
+#
+sub _eles {
+   my($self,$exists) = @_;
+
+   if ($exists) {
+      my @ele;
+      if ($$self{"list"}) {
+         my $n = $#{ $$self{"raw"} };
+         @ele = (0..$n);
+      } else {
+         my @tmp = CORE::keys %{ $$self{"raw"} };
+         @ele = sort(@tmp);
+      }
+
+      $$self{"elesx"} = [ @ele ];
+      %{ $$self{"elesxh"} } = map { $_,1 } @ele;
+      return;
+   }
+
+   _eles($self,"construct");
+   my(@non);
+
+   foreach my $ele (@{ $$self{"elesx"} }) {
+      push(@non,$ele)  if (! _ele_empty($self,$ele));
+   }
+
+   if ($$self{"list"}) {
+      $$self{"elesn"} = [ sort { $a <=> $b } @non ];
+   } else {
+      $$self{"elesn"} = [ sort @non ];
+   }
+}
+
+# Construct a data element from a raw element and all default elements.
+#
+sub _ele {
+   my($self,$ele) = @_;
+
+   # Test to see if the element has been constructed.
+   if ($$self{"list"}) {
+      return  if (defined $$self{"data"}[$ele]);
+   } else {
+      return  if (exists $$self{"data"}{$ele});
+   }
+
+   # Initialize the data element using the raw data
+
+   if ($$self{"list"}) {
+      $$self{"data"}[$ele] = undef;
+      $$self{"data"}[$ele] = dclone($$self{"raw"}[$ele])
+        if (defined $$self{"raw"}[$ele]);
+   } else {
+      $$self{"data"}{$ele} = undef;
+      $$self{"data"}{$ele} = dclone($$self{"raw"}{$ele})
+        if (defined $$self{"raw"}{$ele});
+   }
+
+   # Merge in each default.
+
+   my $NDS = $self->nds();
+   foreach my $def (@{ $$self{"def"} }) {
+      if ($$self{"list"}) {
+         my($defele,$ruleset,@cond) = @$def;
+         my $nds  = _ele_nds($self,$ele);
+         if ($NDS->test_conditions($nds,@cond)) {
+            my $tmp = $$self{"data"}[$ele];
+            $NDS->merge($tmp,dclone($defele),$ruleset);
+            $$self{"data"}[$ele] = $tmp;
+         }
+
+      } else {
+         my($e,$defele,$ruleset,@cond) = @$def;
+         my $nds  = _ele_nds($self,$ele);
+         if ($NDS->test_conditions($nds,@cond)) {
+            my $tmp = $$self{"data"}{$ele};
+            $NDS->merge($tmp,dclone($defele),$ruleset);
+            $$self{"data"}{$ele} = $tmp;
+         }
+      }
+   }
+}
+
+# Test to see if an element is empty (construct it if necessary).
+#
+sub _ele_nonempty {
+   my($self,$ele) = @_;
+
+   my $NDS = $self->nds();
+   my $nds = _ele_nds($self,$ele);
+   my $val = $NDS->empty($nds);
+
+   if (! defined $val) {
+      return undef;
+   }
+   $val = 1-$val;
+   $$self{"elesnh"}{$ele} = $val;
+   return $val;
+}
+
+# Return the full NDS of an element.
+#
+# If $raw is 1, returns the raw element.
+# If $noconstruct is 1, returns the current data element without constructing.
+# Otherwise, returns the full element.
+#
+sub _ele_nds {
+   my($self,$ele,$raw,$noconstruct) = @_;
+
+   if ($raw) {
+      if ($$self{"list"}) {
+         return $$self{"raw"}[$ele];
+      } else {
+         return $$self{"raw"}{$ele};
+      }
+   }
+
+   # $noconstruct is useful so that this can be called while in
+   # the process of merging in each of the defaults.
+   if (! $noconstruct) {
+      _ele($self,$ele);
+      return undef  if ($self->err());
+   }
+
+   if ($$self{"list"}) {
+      return $$self{"data"}[$ele];
+   } else {
+      return $$self{"data"}{$ele};
+   }
+}
+
+sub _ele_exists {
+   my($self,$ele) = @_;
+   _eles($self,"construct");
+   return 1  if (exists $$self{"elesxh"}{$ele});
+   return 0;
+}
+
+sub _ele_empty {
+   my($self,$ele) = @_;
+   return 1  if (! _ele_exists($self,$ele));
+   _ele($self,$ele);
+   _ele_nonempty($self,$ele);
+   return 1-$$self{"elesnh"}{$ele};
 }
 
 ###############################################################################
@@ -265,6 +425,12 @@ sub default_element {
    my($self,@args)  = @_;
    $$self{"err"}    = "";
    $$self{"errmsg"} = "";
+
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
 
    # For hashes, get the element
 
@@ -337,10 +503,6 @@ sub default_element {
    }
    push(@def,$ruleset,@cond);
    push(@{ $$self{"def"} },[@def]);
-   $$self{"elesx"} = [];
-   $$self{"elesn"} = [];
-   $$self{"eles"}  = {};
-   $$self{"status"}= 0;
    return;
 }
 
@@ -348,6 +510,12 @@ sub is_default_value {
    my($self,$ele,$path) = @_;
    $$self{"err"}    = "";
    $$self{"errmsg"} = "";
+
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
 
    if (! $self->ele($ele,1)) {
       $$self{"err"}    = "nmeele01";
@@ -376,7 +544,7 @@ sub is_default_value {
    # to come from a default.
 
    my $NDS = $self->nds();
-   my $nds = _nds($self,$ele,1);
+   my $nds = _ele_nds($self,$ele,1);
    my $raw = $NDS->value($nds,$path);
    if ($NDS->err()  ||
        ! defined $raw) {
@@ -401,484 +569,6 @@ sub is_default_value {
 }
 
 ###############################################################################
-# INITIALIZE ELEMENTS
-###############################################################################
-
-# Test to see which elements exist. An undefined value in a list exists,
-# as does a hash element with an undefined value.
-#
-sub _exists {
-   my($self) = @_;
-   return  if ($$self{"status"} > 0);
-
-   if ($$self{"list"}) {
-      # A list element "exists" if it is no larger than the highest index.
-      my $n = $#{ $$self{"raw"} };
-      %{ $$self{"eles"} } = map { $_,0 } (0..$n);
-      $$self{"elesx"} = [ (0..$n) ];
-
-   } else {
-      # Ordered list and hash elements exist if they exist in the raw hash.
-      my @tmp = CORE::keys %{ $$self{"raw"} };
-      %{ $$self{"eles"} } = map { $_,0 } @tmp;
-      if ($$self{"ordered"}) {
-         $$self{"elesx"} = [ sort { $a<=>$b } @tmp ];
-      } else {
-         $$self{"elesx"} = [ sort @tmp ];
-      }
-   }
-
-   $$self{"status"} = 1;
-}
-
-sub _exists_ele {
-   my($self,$ele) = @_;
-
-   return 1  if (exists $$self{"eles"}{$ele});
-   return 0  if ($$self{"status"} > 0);
-   _exists($self);
-   return 1  if (exists $$self{"eles"}{$ele});
-   return 0;
-}
-
-# Make sure all elements have been fully constructed.
-#
-sub _construct_eles {
-   my($self) = @_;
-   return  if ($$self{"status"} > 1);
-   _exists($self);
-
-   foreach my $ele (@{ $$self{"elesx"} }) {
-      _construct_ele($self,$ele);
-      return  if ($self->err());
-   }
-   $$self{"status"} = 2;
-}
-
-# Construct a data element from a raw element and all default elements.
-#
-sub _construct_ele {
-   my($self,$ele) = @_;
-
-   # Test to see if the element exists.
-
-   if (! _exists_ele($self,$ele)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
-      return;
-   }
-
-   # Test to see if the element has been constructed.
-
-   return  if ($$self{"eles"}{$ele} > 0);
-
-   # Initialize the data element using the raw data
-
-   if ($$self{"list"}) {
-      $$self{"data"}[$ele] = undef;
-      $$self{"data"}[$ele] = dclone($$self{"raw"}[$ele])
-        if (defined $$self{"raw"}[$ele]);
-   } else {
-      $$self{"data"}{$ele} = undef;
-      $$self{"data"}{$ele} = dclone($$self{"raw"}{$ele})
-        if (defined $$self{"raw"}{$ele});
-   }
-
-   # Merge in each default.
-
-   my $NDS = $self->nds();
-   foreach my $def (@{ $$self{"def"} }) {
-      my($e,$defele,$ruleset,@cond);
-      if ($$self{"list"}) {
-         ($defele,$ruleset,@cond) = @$def;
-         if (_test_ele_conditions($self,$ele,@cond)) {
-            my $tmp = $$self{"data"}[$ele];
-            $NDS->merge($tmp,$defele,$ruleset);
-            $$self{"data"}[$ele] = dclone($tmp);
-         }
-
-      } else {
-         ($e,$defele,$ruleset,@cond) = @$def;
-         if (_test_ele_conditions($self,$ele,@cond)) {
-            my $tmp = $$self{"data"}{$ele};
-            $NDS->merge($tmp,$defele,$ruleset);
-            $$self{"data"}{$ele} = dclone($tmp);
-         }
-      }
-   }
-
-   $$self{"eles"}{$ele} = 1;
-}
-
-# Test all elements for for empty.
-#
-sub _empty {
-   my($self) = @_;
-   return  if ($$self{"status"} > 2);
-   _construct_eles($self);
-   return undef  if ($self->err());
-
-   my @tmp;
-   foreach my $ele (@{ $$self{"elesx"} }) {
-      my $empty = _empty_ele($self,$ele);
-      return undef  if ($self->err());
-      push(@tmp,$ele)  if (! $empty);
-   }
-   $$self{"elesn"} = [@tmp];
-   $$self{"status"} = 3;
-}
-
-# Tests to see if an element is empty (can also test the raw element)
-#
-sub _empty_ele {
-   my($self,$ele,$raw) = @_;
-
-   # Test to see if the element exists.
-
-   if (! _exists_ele($self,$ele)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
-      return;
-   }
-
-   # Test the raw element if applicable.
-
-   my $NDS = $self->nds();
-   if ($raw) {
-      if ($$self{"list"}) {
-         return $NDS->empty($$self{"raw"}[$ele]);
-      } else {
-         return $NDS->empty($$self{"raw"}{$ele});
-      }
-   }
-
-   # Test to see if the element has been tested and constructed.
-
-   if ($$self{"eles"}{$ele} > 1) {
-      return 1  if ($$self{"eles"}{$ele} == 2);
-      return 0;
-   }
-
-   if ($$self{"eles"}{$ele} == 0) {
-      _construct_ele($self,$ele);
-      return undef  if ($self->err());
-   }
-
-   # Test to see if it's empty.
-
-   my $empty;
-
-   if ($$self{"list"}) {
-      $empty = $NDS->empty($$self{"data"}[$ele]);
-   } else {
-      $empty = $NDS->empty($$self{"data"}{$ele});
-   }
-   $$self{"eles"}{$ele} = ($empty ? 2 : 3);
-
-   return $empty;
-}
-
-# Return the full NDS of an element.
-#
-# If $raw is 1, returns the raw element.
-# If $noconstruct is 1, returns the current data element without constructing.
-# Otherwise, returns the full element.
-#
-sub _nds {
-   my($self,$ele,$raw,$noconstruct) = @_;
-
-   if ($raw) {
-      if ($$self{"list"}) {
-         return $$self{"raw"}[$ele];
-      } else {
-         return $$self{"raw"}{$ele};
-      }
-   }
-
-   # $noconstruct is useful so that this can be called while in
-   # the process of merging in each of the defaults.
-   if (! $noconstruct) {
-      _construct_ele($self,$ele);
-      return undef  if ($self->err());
-   }
-
-   if ($$self{"list"}) {
-      return $$self{"data"}[$ele];
-   } else {
-      return $$self{"data"}{$ele};
-   }
-}
-
-# Deletes an element. By default, deletes it fully. If $leaveraw is
-# passed in, it deletes only the constructed element.
-#
-sub _delete_ele {
-   my($self,$ele,$leaveraw) = @_;
-
-   # Test to see if the element exists.
-
-   if (! _exists_ele($self,$ele)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
-      return;
-   }
-
-   # Delete the element
-
-   if ($$self{"list"}  &&  $$self{"ordered"}) {
-
-      #
-      # Delete an ordered list element (leaves an undef placeholder).
-      #
-
-      $$self{"data"}[$ele] = undef  if (defined $$self{"data"}[$ele]);
-      $$self{"raw"}[$ele]  = undef  if (defined $$self{"raw"}[$ele]  &&
-                                        ! $leaveraw);
-      $$self{"eles"}{$ele} = 0;
-
-   } elsif ($$self{"list"}) {
-
-      #
-      # Delete an ordered list element (leaves an undef placeholder)
-      #
-
-      if ($#{ $$self{"data"} } >= $ele) {
-         splice( @{ $$self{"data"} },$ele,1);
-      }
-
-      my $idx = "";
-      if ($#{ $$self{"raw"} } >= $ele) {
-         if (! $leaveraw) {
-            splice( @{ $$self{"raw"} },$ele,1);
-            $idx = $ele;
-         }
-      } else {
-         $$self{"err"}    = "nmeerr04";
-         $$self{"errmsg"} = "Attempt to delete an element outside of a " .
-           "list: $ele";
-         return;
-      }
-
-      if ($idx) {
-         my $n = $#{ $$self{"raw"} };
-         while ($idx <= $n) {
-            $$self{"eles"}{$idx} = $$self{"eles"}{$idx+1};
-            $idx++;
-         }
-         delete $$self{"eles"}{$n+1};
-      } else {
-         $$self{"eles"}{$ele} = 0;
-      }
-
-   } else {
-
-      #
-      # Delete a hash element
-      #
-
-      delete $$self{"data"}{$ele};
-      delete $$self{"raw"}{$ele}  unless ($leaveraw);
-      delete $$self{"eles"}{$ele};
-   }
-
-   $$self{"elesx"}      = [];
-   $$self{"elesn"}      = [];
-   $$self{"status"}     = 0;
-}
-
-# Move an element from one name to another.  This will never be done
-# with a list.
-#
-sub _move_ele {
-   my($self,$ele,$newele) = @_;
-
-   if ($$self{"list"}  &&  ! $$self{"ordered"}) {
-      die "ERROR: impossible move_ele error.";
-   }
-
-   # Test to see if the element exists.
-
-   if (! _exists_ele($self,$ele)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
-      return;
-   }
-
-   # Check to make sure that $newele is available. It must not exist,
-   # or be empty.
-
-   if (_exists_ele($self,$newele)) {
-      if (! _empty_ele($self,$newele,1)) {
-         $$self{"err"}    = "nmeele02";
-         $$self{"errmsg"} = "Attempt to overwrite an existing element: $newele";
-         return;
-      }
-   }
-
-   # Move both the data and raw elements.
-
-   if ($$self{"list"}) {
-      if (exists $$self{"data"}[$ele]) {
-         $$self{"data"}[$newele] = $$self{"data"}[$ele];
-         $$self{"data"}[$ele]    = undef;
-      }
-      $$self{"raw"}[$newele]  = $$self{"raw"}[$ele];
-      $$self{"raw"}[$ele]     = undef;
-
-   } else {
-      if (exists $$self{"data"}{$ele}) {
-         $$self{"data"}{$newele} = $$self{"data"}{$ele};
-         delete $$self{"data"}{$ele};
-      }
-      $$self{"raw"}{$newele}  = $$self{"raw"}{$ele};
-      delete $$self{"raw"}{$ele};
-   }
-
-   # Update status.
-
-   $$self{"eles"}{$newele} = $$self{"eles"}{$ele};
-   $$self{"elesx"}         = [];
-   $$self{"elesn"}         = [];
-   $$self{"status"}        = 0;
-   delete $$self{"eles"}{$ele};
-}
-
-# Add a new element. If it's a list, $ele is optional. The new element is
-# just pushed onto the list if it's abesent, or inserted into the list
-# if it's present.
-#
-sub _add_ele {
-   my($self,$ele,$nds) = @_;
-   $ele = ""  if (! defined($ele));
-   _exists($self);
-
-   # We can add to:
-   #   An existing, but empty, ordered list element  OR
-   #   A non-existant unordered list or hash element
-
-   if ($ele ne "") {
-      if ($$self{"list"}  &&  ! $$self{"ordered"}) {
-         # For an unordered list, $ele must be an existing element.
-         if (! _exists_ele($self,$ele)) {
-            $$self{"err"}    = "nmeele04";
-            $$self{"errmsg"} = "Attempt to add element to an unordered list " .
-              "using a non-existant element: $ele";
-            return;
-         }
-      }
-
-      if (! $$self{"list"}) {
-         if (_exists_ele($self,$ele)) {
-            $$self{"err"}    = "nmeele02";
-            $$self{"errmsg"} = "Attempt to overwrite an existing element: $ele";
-            return;
-         }
-      }
-   }
-
-   # We must specify the name of a new element in a hash.
-
-   if (! $$self{"list"}) {
-      if ($ele eq "") {
-         $$self{"err"}    = "nmeele03";
-         $$self{"errmsg"} = "An element must be included when adding to a " .
-           "hash.";
-         return;
-      }
-
-      if (_exists_ele($self,$ele)) {
-         $$self{"err"}    = "nmeele02";
-         $$self{"errmsg"} = "Attempt to overwrite an existing element: $ele";
-         return;
-      }
-   }
-
-   # Add the new element to a list
-
-   if ($$self{"list"}) {
-      my $n = $#{ $$self{"raw"} };
-
-      if ($ele eq "") {
-         #
-         # Append an element
-         #
-         $n++;
-         push @{ $$self{"raw"} },$nds;
-         push @{ $$self{"elesx"} },$n;
-         $$self{"eles"}{$n} = 0;
-         $$self{"elesn"}    = [];
-         $$self{"status"}   = 1  if ($$self{"status"} > 1);
-
-      } elsif ($ele > $n) {
-         #
-         # Add an element past the end of the list.
-         #
-         $$self{"raw"}[$ele]  = $nds;
-         $$self{"elesx"}      = [];
-         $$self{"elesn"}      = [];
-         $$self{"status"}     = 0;
-         $$self{"eles"}{$ele} = 0;
-
-      } elsif (_empty_ele($self,$ele,1)) {
-         #
-         # Replace an undef place holder.
-         #
-         $$self{"raw"}[$ele]  = $nds;
-         $$self{"elesx"}      = [];
-         $$self{"elesn"}      = [];
-         $$self{"status"}     = 0;
-         $$self{"eles"}{$ele} = 0;
-
-      } else {
-         #
-         # Insert before an existing element.
-         #
-         if (! _exists_ele($self,$ele)) {
-            $$self{"err"}    = "nmeerr03";
-            $$self{"errmsg"} = "An existing element is required: $ele";
-            return;
-         }
-         splice(@{ $$self{"raw"} },$ele,0,$nds);
-         if ($#{ $$self{"data"} } >= $ele) {
-            splice(@{ $$self{"data"} },$ele,0,undef);
-         }
-
-         my $i = $n+1;
-         push @{ $$self{"elesx"} },$i;
-         while ($i > $ele) {
-            $$self{"eles"}{$i} = $$self{"eles"}{$i-1};
-            $i--;
-         }
-
-         $$self{"elesn"}      = [];
-         $$self{"status"}     = 1  if ($$self{"status"} > 1);
-         $$self{"eles"}{$ele} = 0;
-      }
-
-      return;
-   }
-
-   # Add the new element to a hash
-
-   # Check to make sure that $ele is available. It must not exist,
-   # or be empty.
-
-   if (_exists_ele($self,$ele)) {
-      if (! _empty_ele($self,$ele,1)) {
-         $$self{"err"}    = "nmeele02";
-         $$self{"errmsg"} = "Attempt to overwrite an existing element: $ele";
-         return;
-      }
-   }
-
-   $$self{"raw"}{$ele}  = $nds;
-   $$self{"eles"}{$ele} = 0;
-   $$self{"elesx"}      = [];
-   $$self{"elesn"}      = [];
-   $$self{"status"}     = 0;
-}
-
-###############################################################################
 # ELEMENT EXISTANCE METHODS
 ###############################################################################
 
@@ -888,11 +578,11 @@ sub eles {
    $$self{"errmsg"} = "";
 
    if ($exists) {
-      _exists($self);
+      _eles($self,"construct");
       return undef  if ($self->err());
       return @{ $$self{"elesx"} };
    } else {
-      _empty($self);
+      _eles($self);
       return undef  if ($self->err());
       return @{ $$self{"elesn"} };
    }
@@ -903,403 +593,26 @@ sub ele {
    $$self{"err"}    = "";
    $$self{"errmsg"} = "";
 
-   _exists($self);
-   return undef  if ($self->err());
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
 
    if ($exists) {
-      return 1  if (_exists_ele($self,$ele));
-      return 0;
-
-   } else {
-      return 0  if (! _exists_ele($self,$ele));
-      _construct_ele($self,$ele);
-      return 0  if (_empty_ele($self,$ele));
-      return 1;
-   }
-}
-
-###############################################################################
-# PATH CONDITIONS
-###############################################################################
-
-# NOTE: the element must be constructed (at least partly) before this
-# is called.
-#
-# This tests to see if a series of ($path,$cond) conditions are met
-# for the element passed in.
-#
-# Conditions are specific to the type of structure at $path and exist
-# for hash, list, and scalar structures.
-#
-# Every condition can be prefixed by a "!" so "!empty:VAL" is a
-# valid hash condition that tests to see if the VAL key is NOT empty.
-#
-sub _test_ele_conditions {
-   my($self,$ele,@cond) = @_;
-   return 1  if (! @cond);
-
-   my $NDS = $self->nds();
-   my $nds = _nds($self,$ele,0,1);
-   while (@cond) {
-      my $path = shift(@cond);
-      my $cond = shift(@cond);
-
-      # Get the value at the path. An error code means that the path
-      # is not defined (but the path is valid in the sense that it COULD
-      # be there... it just doesn't exist in this NDS).
-
-      my $s    = $NDS->get_structure($path);  # hash, list, or scalar/other
-      my $v    = $NDS->value($nds,$path);
-
-      my $pass;
-      if ($s eq "hash") {
-         $pass = _test_ele_hash_condition($self,$NDS,$v,$cond);
-      } elsif ($s eq "list") {
-         $pass = _test_ele_list_condition($self,$NDS,$v,$cond);
+      if ($$self{"list"}) {
+         return 1  if (defined $$self{"raw"}[$ele]);
+         return 0;
       } else {
-         $pass = _test_ele_scalar_condition($self,$NDS,$v,$cond);
-      }
-      return  if ($self->err());
-
-      return 0  if (! $pass);
-   }
-   return 1;
-}
-
-#
-# These take the value of the $NDS->valid call and test to see if the
-# value meets the condition. Returns 0 or 1.
-#
-
-# If $path refers to a hash, conditions can be any of the following:
-#
-#    exists:VAL   : true if a key named VAL exists in the hash
-#    empty:VAL    : true if a key named VAL is empty in the hash (it
-#                   doesn't exist, or has an empty value)
-#    empty        : true if the hash is empty
-#
-sub _test_ele_hash_condition {
-   my($self,$NDS,$nds,$cond) = @_;
-
-   # An undefined value:
-   #    passes empty
-   #    passes empty:VAL
-   #    passes !exists:VAL
-   #    fails  all others
-
-   if (! defined $nds) {
-      return 1  if ($cond =~ /^empty/  ||
-                    $cond =~ /^\!exists/);
-      return 0;
-   }
-
-   # A non-hash element should not even be passed in.
-
-   if (ref($nds) ne "HASH") {
-     die "ERROR: [_test_ele_hash_condition] impossible: non-hash passed in\n";
-   }
-
-   # Test for existance of a key or an empty key
-
-   if ($cond =~ /^(\!?)(exists|empty):(.+)$/) {
-      my ($not,$op,$key) = ($1,$2,$3);
-      my $exists = (exists $$nds{$key});
-
-      if ($op eq "exists") {
-         return 1  if ( ($exists  &&  ! $not) ||
-                        (! $exists  &&  $not) );
+         return 1  if (exists $$self{"raw"}{$ele});
          return 0;
       }
 
-      my $empty = 1;
-      $empty    = $NDS->empty($$nds{$key})  if ($exists);
-
-      return 1  if ( ($empty  &&  ! $not) ||
-                     (! $empty  &&  $not) );
-      return 0;
-   }
-
-   # An empty value:
-   #    passes empty
-   #    fails  !empty
-   # A non-empty value:
-   #    fails  empty
-   #    passes !empty
-
-   if ($NDS->empty($nds)) {
-      return 1  if ($cond eq "empty");
-      return 0  if ($cond eq "!empty");
    } else {
-      return 0  if ($cond eq "empty");
-      return 1  if ($cond eq "!empty");
+      return $$self{"elesnh"}{$ele}  if (exists $$self{"elesnh"}{$ele});
+      _ele_nonempty($self,$ele);
+      return $$self{"elesnh"}{$ele};
    }
-
-   $$self{"err"}    = "nmedef05";
-   $$self{"errmsg"} = "An invalid hash condition: $cond";
-   return;
-}
-
-# If $path refers to a list, conditions may be any of the following:
-#
-#    empty        : true if the list is empty
-#    defined:VAL  : true if the VAL'th (VAL is an integer) element
-#                   is defined
-#    empty:VAL    : true if the VAL'th (VAL is an integer) element
-#                   is empty (or not defined)
-#    contains:VAL : true if the list contains the element VAL
-#    <:VAL        : true if the list has fewer than VAL (an integer)
-#                   non-empty elements
-#    <=:VAL
-#    =:VAL
-#    >:VAL
-#    >=:VAL
-#    VAL          : equivalent to contains:VAL
-#
-sub _test_ele_list_condition {
-   my($self,$NDS,$nds,$cond) = @_;
-
-   # An undefined value:
-   #    passes empty
-   #    passes empty:VAL
-   #    passes !defined:VAL
-   #    passes !contains:VAL
-   #    passes =:0
-   #    passes !=:*  (not zero)
-   #    passes <:*
-   #    passes <=:*
-   #    passes >=:0
-   #    fails  all others
-
-   if (! defined($nds)) {
-      return 1  if ($cond eq "empty"  ||
-                    $cond =~ /^empty:(.+)$/  ||
-                    $cond =~ /^\!defined:(.+)$/  ||
-                    $cond =~ /^\!contains:(.+)$/  ||
-                    $cond eq "=:0"  ||
-                    $cond =~ /^\!=:(\d*[1-9]\d*)$/  ||
-                    $cond =~ /^<:(\d+)$/  ||
-                    $cond =~ /^<=:(\d+)$/  ||
-                    $cond eq ">=:0");
-      return 0;
-   }
-
-   # A non-list element should not even be passed in.
-
-   if (ref($nds) ne "ARRAY") {
-      die "ERROR: [_test_ele_list_condition] impossible: non-list passed in\n";
-   }
-
-   # Test for defined/empty keys
-
-   if ($cond =~ /^(\!?)(defined|empty):(\d+)$/) {
-      my ($not,$op,$i) = ($1,$2,$3);
-      my $def = (defined $$nds[$i]);
-
-      if ($op eq "defined") {
-         return 1  if ( ($def  &&  ! $not) ||
-                        (! $def  &&  $not) );
-         return 0;
-      }
-
-      my $empty = 1;
-      $empty    = $NDS->empty($$nds[$i])  if ($def);
-
-      return 1  if ( ($empty  &&  ! $not) ||
-                     (! $empty  &&  $not) );
-      return 0;
-   }
-
-   # < <= = > >= tests
-
-   if ($cond =~ /^(\!?)(<=|<|=|>=|>):(\d+)$/) {
-      my($not,$op,$val) = ($1,$2,$3);
-      my $n = 0;
-      foreach my $v (@$nds) {
-         $n++  if (! $NDS->empty($v));
-      }
-
-      if      ($op eq "<") {
-         return 1  if ( ($n < $val  &&  ! $not) ||
-                        ($n >= $val  &&  $not) );
-         return 0;
-
-      } elsif ($op eq "<=") {
-         return 1  if ( ($n <= $val  &&  ! $not) ||
-                        ($n > $val  &&  $not) );
-         return 0;
-
-      } elsif ($op eq "=") {
-         return 1  if ( ($n == $val  &&  ! $not) ||
-                        ($n != $val  &&  $not) );
-         return 0;
-
-      } elsif ($op eq ">=") {
-         return 1  if ( ($n >= $val  &&  ! $not) ||
-                        ($n < $val  &&  $not) );
-         return 0;
-
-      } else {
-         return 1  if ( ($n > $val  &&  ! $not) ||
-                        ($n <= $val  &&  $not) );
-         return 0;
-      }
-   }
-
-   # contains condition
-
-   if ($cond =~ /^(\!?)contains:(.*)$/) {
-      my($not,$val) = ($1,$2);
-      $val          = ""  if (! defined $val);
-      foreach my $v (@$nds) {
-         next  if (! defined $v);
-         if ($v eq $val) {
-            return 1  if (! $not);
-            return 0  if ($not);
-         }
-      }
-      return 0  if (! $not);
-      return 1;
-   }
-
-   # An empty list:
-   #   passes empty
-   #   fails  !empty
-   # A non-empty list:
-   #   fails  empty
-   #   passes !empty
-
-   if ($NDS->empty($nds)) {
-      return 1  if ($cond eq "empty");
-      return 0  if ($cond eq "!empty");
-   } else {
-      return 0  if ($cond eq "empty");
-      return 1  if ($cond eq "!empty");
-   }
-
-   # VAL test
-
-   my $not = 0;
-   $not    = 1 if ($cond =~ s/^\!//);
-
-   foreach my $v (@$nds) {
-      next  if (! defined $v);
-      if ($v eq $cond) {
-         return 1  if (! $not);
-         return 0  if ($not);
-      }
-   }
-   return 0  if (! $not);
-   return 1;
-}
-
-# If $path refers to a scalar, conditions may be any of the following:
-#
-#    defined      : true if the value is not defined
-#    empty        : true if the value is empty
-#    zero         : true if the value defined and evaluates to 0
-#    true         : true if the value defined and evaluates to true
-#    =:VAL        : true if the the value is VAL
-#    member:VAL:VAL:...
-#                 : true if the value is any of the values given (in
-#                   this case, ALL of the colons (including the first
-#                   one) can be replace by any other single character
-#                   separator
-#    VAL          : true if the value is equal to VAL
-#
-sub _test_ele_scalar_condition {
-   my($self,$NDS,$nds,$cond) = @_;
-
-   # An undefined value
-   #    passes !defined
-   #    passes empty
-   #    passes !=:*
-   #    passes !member:*
-   #    fails  all others
-
-   if (! defined $nds) {
-      return 1  if ($cond eq "!defined"  ||
-                    $cond eq "empty"  ||
-                    $cond =~ /^\!=:/  ||
-                    $cond =~ /^\!member/);
-      return 0;
-   }
-
-   # A non-scalar element should not even be passed in.
-
-   if (ref($nds)) {
-      die "ERROR: [_test_ele_scalar_condition] " .
-        "impossible: non-scalar passed in\n";
-   }
-
-   # A defined value
-   #    passes defined
-   #    fails  ! defined
-
-   return 1  if ($cond eq "defined");
-   return 0  if ($cond eq "!defined");
-
-   # An empty value (must pass it as a structure, NOT a scalar)
-   #    passes empty
-   #    fails  !empty
-   # A non-empty value
-   #    passes !empty
-   #    fails  empty
-
-   if ($NDS->empty([$nds])) {
-      return 1  if ($cond eq "empty");
-      return 0  if ($cond eq "!empty");
-   } else {
-      return 0  if ($cond eq "empty");
-      return 1  if ($cond eq "!empty");
-   }
-
-   $nds = ""  if (! defined $nds);
-
-   # zero and true tests
-
-   if      ($cond eq "zero") {
-      return 1  if ($nds == 0);
-      return 0;
-   } elsif ($cond eq "!zero") {
-      return 0  if ($nds == 0);
-      return 1;
-   } elsif ($cond eq "true") {
-      return 1  if ($nds);
-      return 0;
-   } elsif ($cond eq "!true") {
-      return 0  if ($nds);
-      return 1;
-   }
-
-   # = test
-
-   if ($cond =~ /^(\!?)=:(.*)/) {
-      my($not,$val) = ($1,$2);
-      $val = ""  if (! defined $val);
-      return 1  if ( ($nds eq $val  &&  ! $not)  ||
-                     ($nds ne $val  &&  $not) );
-      return 0;
-   }
-
-   # member test
-
-   if ($cond =~ /^(\!?)member(.)(.+)$/) {
-      my($not,$sep,$vals) = ($1,$2,$3);
-      my %tmp = map { (defined $_ ? $_ : ""),1 } split(/\Q$sep\E/,$vals);
-      return 1  if ( (exists $tmp{$nds}  &&  ! $not)  ||
-                     (! exists $tmp{$nds}  &&  $not) );
-      return 0;
-   }
-
-   # VAL test
-
-   if ($cond =~ s/^\!//) {
-      return 0  if ($nds eq $cond);
-      return 1;
-   }
-
-   return 1  if ($nds eq $cond);
-   return 0;
 }
 
 ###############################################################################
@@ -1308,9 +621,15 @@ sub _test_ele_scalar_condition {
 
 sub which {
    my($self,@cond)  = @_;
-   my $NDS          = $$self{"nds"};
+   my $NDS          = nds($self);
    $$self{"err"}    = "";
    $$self{"errmsg"} = "";
+
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
 
    # Test to make sure that all paths are valid, and that there are
    # an even number of values.
@@ -1336,7 +655,7 @@ sub which {
 
    # Test every element
 
-   _empty($self);
+   _eles($self);
    return ()  if ($self->err());
 
    my @eles = $self->eles(1);
@@ -1344,7 +663,8 @@ sub which {
 
    foreach my $ele (@eles) {
       # Test it.
-      my $pass = _test_ele_conditions($self,$ele,@cond);
+      my $nds  = _ele_nds($self,$ele);
+      my $pass = $NDS->test_conditions($nds,@cond);
       return ()  if ($self->err());
       push(@ret,$ele)  if ($pass);
    }
@@ -1368,9 +688,17 @@ sub path_valid {
 ###############################################################################
 
 sub value {
-   my($self,$ele,$path) = @_;
+   my($self,$ele,$path,$copy,$raw) = @_;
    $$self{"err"}    = "";
    $$self{"errmsg"} = "";
+   $copy            = 0  if (! $copy);
+   $raw             = 0  if (! $raw);
+
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
 
    if (! $self->ele($ele,1)) {
       $$self{"err"}    = "nmeele01";
@@ -1385,7 +713,7 @@ sub value {
       return undef;
    }
 
-   my $nds = _nds($self,$ele);
+   my $nds = _ele_nds($self,$ele,$raw);
    my $val = $NDS->value($nds,$path);
    if ($NDS->err()) {
       $$NDS{"err"}     = "";
@@ -1395,13 +723,25 @@ sub value {
       return undef;
    }
 
+   if ($copy) {
+      $val = dclone($val);
+   }
+
    return $val;
 }
 
 sub keys {
-   my($self,$ele,$path,$empty) = @_;
+   my($self,$ele,$path,$empty,$raw) = @_;
    $$self{"err"}    = "";
    $$self{"errmsg"} = "";
+   $empty           = 0  if (! $empty);
+   $raw             = 0  if (! $raw);
+
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
 
    my $NDS = $$self{"nds"};
    if (! $NDS->get_structure($path,"valid")) {
@@ -1410,7 +750,7 @@ sub keys {
       return undef;
    }
 
-   my $nds = _nds($self,$ele);
+   my $nds = _ele_nds($self,$ele,$raw);
    my $val = $NDS->value($nds,$path);
    if ($NDS->err()) {
       $$NDS{"err"}     = "";
@@ -1451,9 +791,18 @@ sub keys {
 }
 
 sub values {
-   my($self,$ele,$path,$empty,$copy) = @_;
+   my($self,$ele,$path,$empty,$copy,$raw) = @_;
    $$self{"err"}    = "";
    $$self{"errmsg"} = "";
+   $empty           = 0  if (! $empty);
+   $copy            = 0  if (! $copy);
+   $raw             = 0  if (! $raw);
+
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
 
    my $NDS = $$self{"nds"};
    if (! $NDS->get_structure($path,"valid")) {
@@ -1462,7 +811,7 @@ sub values {
       return undef;
    }
 
-   my $nds = _nds($self,$ele);
+   my $nds = _ele_nds($self,$ele,$raw);
    my $val = $NDS->value($nds,$path);
    if ($NDS->err()) {
       $$NDS{"err"}     = "";
@@ -1480,7 +829,7 @@ sub values {
          $v2    = [$v2]  if (! ref($v2));
          if ( (! $empty  &&  ! $NDS->empty($v2)) ||
               $empty ) {
-            if ($copy  &&  ! ref($v)) {
+            if ($copy  &&  ref($v)) {
                push(@val,dclone($v));
             } else {
                push(@val,$v);
@@ -1495,7 +844,7 @@ sub values {
          $v2    = [$v2]  if (! ref($v2));
          if ( (! $empty  &&  ! $NDS->empty($v2)) ||
               $empty ) {
-            if ($copy  &&  ! ref($v)) {
+            if ($copy  &&  ref($v)) {
                push(@val,dclone($v));
             } else {
                push(@val,$v);
@@ -1524,6 +873,12 @@ sub path_values {
    $$self{"errmsg"} = "";
    my $NDS          = $$self{"nds"};
 
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
+
    if (! $NDS->get_structure($path,"valid")) {
       $$self{"err"}    = "nmeacc03";
       $$self{"errmsg"} = "Attempt to access data with an invalid path: $path";
@@ -1540,7 +895,7 @@ sub path_values {
    my %ret;
    foreach my $ele (@eles) {
 
-      my $nds = _nds($self,$ele);
+      my $nds = _ele_nds($self,$ele);
       my $val = $NDS->value($nds,$path);
       if ($NDS->err()) {
          $$NDS{"err"}     = "";
@@ -1564,12 +919,72 @@ sub delete_ele {
    $$self{"err"}    = "";
    $$self{"errmsg"} = "";
 
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
+
+   # Test to see if the element exists.
+
+   if (! _ele_exists($self,$ele)) {
+      $$self{"err"}    = "nmeele01";
+      $$self{"errmsg"} = "The specified element does not exist: $ele";
+      return;
+   }
+
    #
    # Delete both the raw element and the full element.
    #
 
    _delete_ele($self,$ele);
    return;
+}
+
+# Deletes an element. By default, deletes it fully. If $leaveraw is
+# passed in, it deletes only the constructed element.
+#
+sub _delete_ele {
+   my($self,$ele,$leaveraw) = @_;
+
+   if ($$self{"list"}  &&  $$self{"ordered"}) {
+
+      #
+      # Delete an ordered list element (leaves an undef placeholder).
+      #
+
+      $$self{"data"}[$ele] = undef  if (defined $$self{"data"}[$ele]);
+      $$self{"raw"}[$ele]  = undef  if (defined $$self{"raw"}[$ele]  &&
+                                        ! $leaveraw);
+
+   } elsif ($$self{"list"}) {
+
+      #
+      # Delete an unordered list element (removes it entirely)
+      #
+
+      if ($#{ $$self{"data"} } >= $ele) {
+         splice( @{ $$self{"data"} },$ele,1);
+      }
+
+      if (! $leaveraw) {
+         splice( @{ $$self{"raw"} },$ele,1);
+      }
+
+   } else {
+
+      #
+      # Delete a hash element
+      #
+
+      delete $$self{"data"}{$ele};
+      delete $$self{"raw"}{$ele}  unless ($leaveraw);
+   }
+
+   $$self{"elesx"}      = undef;
+   $$self{"elesxh"}     = {};
+   $$self{"elesn"}      = undef;
+   $$self{"elesnh"}     = undef;
 }
 
 ###############################################################################
@@ -1582,12 +997,64 @@ sub rename_ele {
    $$self{"errmsg"} = "";
    return  if ($$self{"list"}  &&  ! $$self{"ordered"});
 
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
+
+   # Test to see if the element exists and new element doesn't (or is empty).
+
+   if (! _ele_exists($self,$ele)) {
+      $$self{"err"}    = "nmeele01";
+      $$self{"errmsg"} = "The specified element does not exist: $ele";
+      return;
+   }
+
+   if (_ele_exists($self,$newele)  &&
+       ! _ele_empty($self,$newele)) {
+      $$self{"err"}    = "nmeele02";
+      $$self{"errmsg"} = "Attempt to overwrite an existing element: $newele";
+      return;
+   }
+
    #
    # Rename the raw and combined data elements, and the element list.
    #
 
-   _move_ele($self,$ele,$newele);
+   _rename_ele($self,$ele,$newele);
    return;
+}
+
+# Move an element from one name to another.  This will never be done
+# with a list.
+#
+sub _rename_ele {
+   my($self,$ele,$newele) = @_;
+
+   # Move both the data and raw elements.
+
+   if ($$self{"list"}) {
+      if (defined $$self{"data"}[$ele]) {
+         $$self{"data"}[$newele] = $$self{"data"}[$ele];
+         $$self{"data"}[$ele]    = undef;
+      }
+      $$self{"raw"}[$newele]  = $$self{"raw"}[$ele];
+      $$self{"raw"}[$ele]     = undef;
+
+   } else {
+      if (exists $$self{"data"}{$ele}) {
+         $$self{"data"}{$newele} = $$self{"data"}{$ele};
+         delete $$self{"data"}{$ele};
+      }
+      $$self{"raw"}{$newele}  = $$self{"raw"}{$ele};
+      delete $$self{"raw"}{$ele};
+   }
+
+   $$self{"elesx"}      = undef;
+   $$self{"elesxh"}     = {};
+   $$self{"elesn"}      = undef;
+   $$self{"elesnh"}     = undef;
 }
 
 ###############################################################################
@@ -1596,6 +1063,14 @@ sub rename_ele {
 
 sub add_ele {
    my($self,@args) = @_;
+   $$self{"err"}    = "";
+   $$self{"errmsg"} = "";
+
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
 
    # Parse arguments
 
@@ -1631,6 +1106,119 @@ sub add_ele {
    return;
 }
 
+sub _add_ele {
+   my($self,$ele,$nds) = @_;
+
+   if ($$self{"list"}  &&  ! $$self{"ordered"}) {
+
+      # For an unordered list
+      #    If $ele is given
+      #       It must refer to an existing element. Insert before it.
+      #    Else
+      #       Push onto the end.
+
+      if ($ele) {
+
+         if (! _ele_exists($self,$ele)) {
+            $$self{"err"}    = "nmeele04";
+            $$self{"errmsg"} = "Attempt to add element to an unordered list " .
+              "using a non-existant element: $ele";
+            return;
+         }
+         _add_element_insert($self,$ele,$nds);
+
+      } else {
+         _add_element_push($self,$nds);
+      }
+
+   } elsif ($$self{"list"}) {
+
+      # For an ordered list
+      #    If $ele is given
+      #       If the element exists
+      #          If it is empty
+      #             Put the new element there
+      #          Else
+      #             Insert it before that element
+      #       Else
+      #          Put the new element there
+      #    Else
+      #       Push onto the end.
+
+      if ($ele) {
+
+         if (_ele_exists($self,$ele)) {
+
+            if (_ele_empty($self,$ele)) {
+               _add_element_setlist($self,$ele,$nds);
+            } else {
+               _add_element_insert($self,$ele,$nds);
+            }
+
+         } else {
+            _add_element_setlist($self,$ele,$nds);
+         }
+
+      } else {
+         _add_element_push($self,$nds);
+      }
+
+   } else {
+
+      # For a hash
+      #    If $ele is given and it is empty
+      #       Put the new element there
+      #    Elsif $ele is given and it doesn't exist
+      #       Put it there
+      #    Else
+      #       Error
+
+      if ($ele  &&  _ele_empty($self,$ele)) {
+         _add_element_sethash($self,$ele,$nds);
+      } elsif ($ele  &&  ! _ele_exists($self,$ele)) {
+         _add_element_sethash($self,$ele,$nds);
+      } else {
+         $$self{"err"}    = "nmeele02";
+         $$self{"errmsg"} = "Attempt to overwrite an existing element: $ele";
+         return;
+      }
+   }
+
+   $$self{"elesx"}      = undef;
+   $$self{"elesxh"}     = {};
+   $$self{"elesn"}      = undef;
+   $$self{"elesnh"}     = undef;
+}
+
+sub _add_element_setlist {
+   my($self,$ele,$nds) = @_;
+
+   $$self{"raw"}[$ele] = $nds;
+}
+
+sub _add_element_insert {
+   my($self,$ele,$nds) = @_;
+
+   splice(@{ $$self{"raw"} },$ele,0,$nds);
+   if ($#{ $$self{"data"} } >= $ele) {
+      splice(@{ $$self{"data"} },$ele,0,undef);
+   }
+}
+
+sub _add_element_push {
+   my($self,$nds) = @_;
+
+   my $n = $#{ $$self{"raw"} };
+   $n++;
+   _add_element_setlist($self,$n,$nds);
+}
+
+sub _add_element_sethash {
+   my($self,$ele,$nds) = @_;
+
+   $$self{"raw"}{$ele}  = $nds;
+}
+
 ###############################################################################
 # UPDATE_ELE METHOD
 ###############################################################################
@@ -1638,9 +1226,15 @@ sub add_ele {
 sub update_ele {
    my($self,$ele,$path,$val,$new,$ruleset) = @_;
 
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
+
    # Check to make sure $ele is valid (it need only exist)
 
-   if (! $self->ele($ele,1)) {
+   if (! _ele_exists($self,$ele)) {
       $$self{"err"}    = "nmeele01";
       $$self{"errmsg"} = "The specified element does not exist: $ele";
       return;
@@ -1693,10 +1287,16 @@ sub update_ele {
 
    # Update status information
 
-   $$self{"elesn"}      = [];
-   $$self{"eles"}{$ele} = 0;
-   $$self{"status"}     = 1;
-   delete $$self{"data"}{$ele};
+   $$self{"elesx"}      = undef;
+   $$self{"elesxh"}     = {};
+   $$self{"elesn"}      = undef;
+   $$self{"elesnh"}     = undef;
+
+   if ($$self{"list"}) {
+      $$self{"data"}[$ele] = undef;
+   } else {
+      delete $$self{"data"}{$ele};
+   }
 }
 
 ###############################################################################
@@ -1706,9 +1306,15 @@ sub update_ele {
 sub copy_ele {
    my($self,$ele,$newele) = @_;
 
+   if (! $$self{"file"}) {
+      $$self{"err"}    = "nmefil06";
+      $$self{"errmsg"} = "No file set.";
+      return;
+   }
+
    # Check to make sure $ele is valid (it need only exist)
 
-   if (! $self->ele($ele,1)) {
+   if (! _ele_exists($self,$ele)) {
       $$self{"err"}    = "nmeele01";
       $$self{"errmsg"} = "The specified element does not exist: $ele";
       return;
@@ -1716,7 +1322,7 @@ sub copy_ele {
 
    # Get the structure there.
 
-   my $nds = dclone(_nds($self,$ele,1));
+   my $nds = dclone(_ele_nds($self,$ele,1));
    _add_ele($self,$newele,$nds);
 }
 
@@ -1728,7 +1334,7 @@ sub dump {
    my($self,$ele,$path,%opts) = @_;
 
    my $NDS = $$self{"nds"};
-   my $nds = _nds($self,$ele);
+   my $nds = _ele_nds($self,$ele);
    if ($path) {
       $nds = $NDS->value($nds,$path);
    }
@@ -1748,6 +1354,19 @@ sub save {
       return;
    }
 
+   # Backup file
+
+   if (! $nobackup) {
+      if (! rename($file,"$file.bak")) {
+         $$self{"err"}    = "nmefil07";
+         $$self{"errmsg"} = "Unable to backup data file: $!";
+         return undef;
+      }
+   }
+
+   # The data that must be stored consists of the defaults and
+   # the current raw data.
+
    my $data;
    if ($$self{"list"}) {
       my(@ele);
@@ -1756,16 +1375,6 @@ sub save {
       }
       push(@ele,@{ $$self{"raw"} });
       $data   = \@ele;
-
-   } elsif ($$self{"ordered"}) {
-      my(@ele);
-      foreach my $def (@{ $$self{"def"} }) {
-         push(@ele,$$def[0]);
-      }
-      foreach my $i (sort { $a<=>$b } (CORE::keys %{ $$self{"raw"} })) {
-         push(@ele,$$self{"raw"}{$i});
-      }
-      $data  = \@ele;
 
    } else {
       my(%ele);
@@ -1776,16 +1385,6 @@ sub save {
          $ele{$key} = $$self{"raw"}{$key};
       }
       $data = \%ele;
-   }
-
-   # Backup file
-
-   if (! $nobackup) {
-      if (! rename($file,"$file.bak")) {
-         $$self{"err"}    = "nmefil07";
-         $$self{"errmsg"} = "Unable to backup data file: $!";
-         return undef;
-      }
    }
 
    # Write data
