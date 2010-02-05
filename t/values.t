@@ -5,10 +5,12 @@ require 5.001;
 $runtests=shift(@ARGV);
 if ( -f "t/test.pl" ) {
   require "t/test.pl";
-  $dir="t";
+  $dir="./lib";
+  $tdir="t";
 } elsif ( -f "test.pl" ) {
   require "test.pl";
-  $dir=".";
+  $dir="../lib";
+  $tdir=".";
 } else {
   die "ERROR: cannot find test.pl\n";
 }
@@ -24,7 +26,7 @@ sub test {
 }
 
 $obj = new Data::NDS::Multiele;
-$obj->file("$dir/DATA.data.yaml");
+$obj->file("$tdir/DATA.data.yaml");
 $obj->default_element("def1","/usedef1","1");
 $obj->default_element("def2","/usedef2","1");
 $obj->default_element("def3","/usedef3","1");

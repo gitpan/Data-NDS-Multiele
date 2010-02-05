@@ -43,6 +43,14 @@ Version 3.10  2009-04-14
       Data::NDS::* modules)
    Added raw option to value, keys, values.
 
+Version 3.11  2010-02-05
+   Added "no new structure" option to the file method.
+   Fixed a couple bugs.
+   Added path_in_use method.
+   Performance improvements.
+
+Version 3.12
+
 ########################################################################
 # BACKWARDS INCOMPATIBILITIES
 ########################################################################

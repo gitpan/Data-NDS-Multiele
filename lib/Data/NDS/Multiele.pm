@@ -1,5 +1,5 @@
 package Data::NDS::Multiele;
-# Copyright (c) 2007-2009 Sullivan Beck. All rights reserved.
+# Copyright (c) 2007-2010 Sullivan Beck. All rights reserved.
 # This program is free software; you can redistribute it and/or modify it
 # under the same terms as Perl itself.
 
@@ -21,7 +21,7 @@ use Data::NDS;
 use Storable qw(dclone);
 
 use vars qw($VERSION);
-$VERSION = "3.10";
+$VERSION = '3.11';
 
 ###############################################################################
 # BASE METHODS
@@ -37,7 +37,7 @@ sub new {
 
    # Get the Data::NDS object (if any).
 
-   my $class = "Data::NDS::Multiele";
+   my $class = 'Data::NDS::Multiele';
    my $NDS   = undef;
 
    if (@args  &&  ref($args[0]) eq $class) {
@@ -50,7 +50,7 @@ sub new {
       # $obj = new Data::NDS::Multiele [NDS];
 
       shift(@args);
-      if (@args  &&  ref($args[0]) eq "Data::NDS") {
+      if (@args  &&  ref($args[0]) eq 'Data::NDS') {
          $NDS = shift(@args);
       } else {
          $NDS = new Data::NDS;
@@ -63,7 +63,7 @@ sub new {
 
    # Get the file (if any)
 
-   my $file = "";
+   my $file = '';
    if (@args) {
       $file = shift(@args);
    }
@@ -72,7 +72,7 @@ sub new {
 
    my $ordered = 0;
    if ($file) {
-      if (@args  &&  $args[0] eq "1") {
+      if (@args  &&  $args[0] eq '1') {
          $ordered = shift(@args);
       }
    }
@@ -85,31 +85,31 @@ sub new {
    }
 
    my $self = {
-               "nds"       => $NDS,  # Data::NDS object
-               "file"      => "",    # Path to YAML file
-               "list"      => "",    # 1 if the data is a list.
-               "ordered"   => 0,     # 1 if it is an ordered list.
-               "def"       => [],    # List of default elements.
+               'nds'       => $NDS,  # Data::NDS object
+               'file'      => '',    # Path to YAML file
+               'list'      => '',    # 1 if the data is a list.
+               'ordered'   => 0,     # 1 if it is an ordered list.
+               'def'       => [],    # List of default elements.
                                      #   [ [ [NAME] ELE1 RULESET COND... ]
                                      #     [ [NAME] ELE2 RULESET COND... ] ]
                                      # NAME is used only for hashes
-               "raw"       => undef, # hash/list of elements
-               "data"      => undef, # hash/list of full elements
-               "err"       => "",
-               "errmsg"    => "",
-               "elesx"     => undef, # A list of all existing elements
-               "elesn"     => undef, # A list of all non-empty elements
-               "elesxh"    => {},    # A hash of { ELE => 1 } for existing elements
-                                     # Exactly equivalent to "elesx".
-               "elesnh"    => undef, # A hash of { ELE => 0/1 } for empty/not
+               'raw'       => undef, # hash/list of elements
+               'data'      => undef, # hash/list of full elements
+               'err'       => '',
+               'errmsg'    => '',
+               'elesx'     => undef, # A list of all existing elements
+               'elesn'     => undef, # A list of all non-empty elements
+               'elesxh'    => {},    # A hash of { ELE => 1 } for existing elements
+                                     # Exactly equivalent to 'elesx'.
+               'elesnh'    => undef, # A hash of { ELE => 0/1 } for empty/not
 
 
-               "eles"      => {},    # A hash of all elements. The value is:
+               'eles'      => {},    # A hash of all elements. The value is:
                                      #   0  : exists
                                      #   1  : constructed
                                      #   2  : constructed, known empty
                                      #   3  : constructed, known non-empty
-               "status"    => 0,     # Status of data
+               'status'    => 0,     # Status of data
                                      #   0  : no checks
                                      #   1  : existance checked
                                      #   2  : all element constructed
@@ -117,8 +117,12 @@ sub new {
               };
    bless $self, $class;
 
+   if ($ordered) {
+      $$self{'ordered'} = 1;
+   }
+
    if ($file) {
-      $self->file($file,$ordered);
+      $self->file($file);
       if ($self->err()) {
          return undef;
       }
@@ -136,30 +140,30 @@ sub version {
 sub nds {
    my($self) = @_;
 
-   return $$self{"nds"};
+   return $$self{'nds'};
 }
 
 sub err {
    my($self) = @_;
 
-   return $$self{"err"};
+   return $$self{'err'};
 }
 
 sub errmsg {
    my($self) = @_;
 
-   return $$self{"errmsg"};
+   return $$self{'errmsg'};
 }
 
 sub ordered_list {
    my($self) = @_;
 
-   if ($$self{"file"}) {
-      $$self{"err"}    = "ndserr02";
-      $$self{"errmsg"} = "Cannot call ordered_list after a file is read.";
+   if ($$self{'file'}) {
+      $$self{'err'}    = 'ndserr02';
+      $$self{'errmsg'} = 'Cannot call ordered_list after a file is read.';
       return;
    }
-   $$self{"ordered"} = 1;
+   $$self{'ordered'} = 1;
 }
 
 ###############################################################################
@@ -167,51 +171,50 @@ sub ordered_list {
 ###############################################################################
 
 sub file {
-   my($self,$file,$ordered) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
-   $ordered         = $$self{"ordered"}  if (! defined $ordered ||
-                                             $ordered eq "");
+   my($self,$file,$nostruct) = @_;
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
+   my $ordered      = $$self{'ordered'};
+   my $new          = ($nostruct ? 0 : 1);
 
    #
    # Read the YAML data source
    #
 
-   if ($$self{"file"}) {
-      $$self{"err"}    = "nmefil01";
-      $$self{"errmsg"} = "File already set for this object: $$self{file}";
+   if ($$self{'file'}) {
+      $$self{'err'}    = 'nmefil01';
+      $$self{'errmsg'} = "File already set for this object: $$self{file}";
       return;
    }
 
    if (! -f $file) {
-      $$self{"err"}    = "nmefil02";
-      $$self{"errmsg"} = "File not found: $file";
+      $$self{'err'}    = 'nmefil02';
+      $$self{'errmsg'} = "File not found: $file";
       return;
    }
 
    if (! -r $file) {
-      $$self{"err"}    = "nmefil03";
-      $$self{"errmsg"} = "File not readable: $file";
+      $$self{'err'}    = 'nmefil03';
+      $$self{'errmsg'} = "File not readable: $file";
       return;
    }
 
    my $ref = YAML::Syck::LoadFile($file);
-   if (ref($ref) eq "HASH") {
-      $$self{"list"}    = 0;
-      $$self{"ordered"} = 0;
-      $$self{"data"}    = {};
+   if (ref($ref) eq 'HASH') {
+      $$self{'list'}    = 0;
+      $$self{'ordered'} = 0;
+      $$self{'data'}    = {};
       if ($ordered) {
-         $$self{"err"}    = "nmefil09";
-         $$self{"errmsg"} = "Ordered not valid for a file containing a hash: $file";
+         $$self{'err'}    = 'nmefil09';
+         $$self{'errmsg'} = "Ordered not valid for a file containing a hash: $file";
          return;
       }
-   } elsif (ref($ref) eq "ARRAY") {
-      $$self{"list"}    = 1;
-      $$self{"ordered"} = $ordered;
-      $$self{"data"}    = [];
+   } elsif (ref($ref) eq 'ARRAY') {
+      $$self{'list'}    = 1;
+      $$self{'data'}    = [];
    } else {
-      $$self{"err"}    = "nmefil04";
-      $$self{"errmsg"} = "File must contain a list or hash: $file";
+      $$self{'err'}    = 'nmefil04';
+      $$self{'errmsg'} = "File must contain a list or hash: $file";
       return;
    }
 
@@ -219,18 +222,18 @@ sub file {
    # Check the structure of each element
    #
 
-   my $NDS = $$self{"nds"};
+   my $NDS = $$self{'nds'};
    my $err = 0;
 
-   if ($$self{"list"}) {
+   if ($$self{'list'}) {
       for (my $i=0; $i<=$#$ref; $i++) {
-         $NDS->check_structure($$ref[$i],1);
+         $NDS->check_structure($$ref[$i],$new);
          my $e = $NDS->err();
          if ($e) {
             if ($err) {
-               $$self{"errmsg"} .= " $i [$e]";
+               $$self{'errmsg'} .= " $i [$e]";
             } else {
-               $$self{"errmsg"} = "Invalid element: $i [$e]";
+               $$self{'errmsg'} = "Invalid element: $i [$e]";
             }
             $err = 1;
          }
@@ -238,13 +241,13 @@ sub file {
 
    } else {
       foreach my $ele (CORE::keys %$ref) {
-         $NDS->check_structure($$ref{$ele},1);
+         $NDS->check_structure($$ref{$ele},$new);
          my $e = $NDS->err();
          if ($e) {
             if ($err) {
-               $$self{"errmsg"} .= " $ele [$e]";
+               $$self{'errmsg'} .= " $ele [$e]";
             } else {
-               $$self{"errmsg"} = "Invalid element: $ele [$e]";
+               $$self{'errmsg'} = "Invalid element: $ele [$e]";
             }
             $err = 1;
          }
@@ -253,7 +256,7 @@ sub file {
    }
 
    if ($err) {
-      $$self{"err"} = "nmefil05";
+      $$self{'err'} = 'nmefil05';
       return;
    }
 
@@ -261,9 +264,9 @@ sub file {
    # Store the data.
    #
 
-   $$self{"raw"}   = $ref;
-   $$self{"file"}  = $file;
-   $$self{"def"}   = [];
+   $$self{'raw'}   = $ref;
+   $$self{'file'}  = $file;
+   $$self{'def'}   = [];
    return;
 }
 
@@ -278,30 +281,39 @@ sub _eles {
 
    if ($exists) {
       my @ele;
-      if ($$self{"list"}) {
-         my $n = $#{ $$self{"raw"} };
+      if ($$self{'list'}) {
+         my $n = $#{ $$self{'raw'} };
          @ele = (0..$n);
+
+         if ($#ele != $#{ $$self{'elesx'} }) {
+            $$self{'elesx'} = [ @ele ];
+            %{ $$self{'elesxh'} } = map { $_,1 } @ele;
+         }
+
       } else {
-         my @tmp = CORE::keys %{ $$self{"raw"} };
-         @ele = sort(@tmp);
+         if (! defined($$self{'elesx'})) {
+            my @tmp = CORE::keys %{ $$self{'raw'} };
+            @tmp    = sort @tmp;
+            $$self{'elesx'} = [ @tmp ];
+            %{ $$self{'elesxh'} } = map { $_,1 } @tmp;
+         }
+         @ele = @{ $$self{'elesx'} };
       }
 
-      $$self{"elesx"} = [ @ele ];
-      %{ $$self{"elesxh"} } = map { $_,1 } @ele;
       return;
    }
 
-   _eles($self,"construct");
+   _eles($self,'construct');
    my(@non);
 
-   foreach my $ele (@{ $$self{"elesx"} }) {
+   foreach my $ele (@{ $$self{'elesx'} }) {
       push(@non,$ele)  if (! _ele_empty($self,$ele));
    }
 
-   if ($$self{"list"}) {
-      $$self{"elesn"} = [ sort { $a <=> $b } @non ];
+   if ($$self{'list'}) {
+      $$self{'elesn'} = [ sort { $a <=> $b } @non ];
    } else {
-      $$self{"elesn"} = [ sort @non ];
+      $$self{'elesn'} = [ sort @non ];
    }
 }
 
@@ -311,44 +323,52 @@ sub _ele {
    my($self,$ele) = @_;
 
    # Test to see if the element has been constructed.
-   if ($$self{"list"}) {
-      return  if (defined $$self{"data"}[$ele]);
+   if ($$self{'list'}) {
+      return  if (defined $$self{'data'}[$ele]);
    } else {
-      return  if (exists $$self{"data"}{$ele});
+      return  if (exists $$self{'data'}{$ele});
    }
 
    # Initialize the data element using the raw data
 
-   if ($$self{"list"}) {
-      $$self{"data"}[$ele] = undef;
-      $$self{"data"}[$ele] = dclone($$self{"raw"}[$ele])
-        if (defined $$self{"raw"}[$ele]);
+   if ($$self{'list'}) {
+      $$self{'data'}[$ele] = undef;
+      $$self{'data'}[$ele] = dclone($$self{'raw'}[$ele])
+        if (defined $$self{'raw'}[$ele]);
    } else {
-      $$self{"data"}{$ele} = undef;
-      $$self{"data"}{$ele} = dclone($$self{"raw"}{$ele})
-        if (defined $$self{"raw"}{$ele});
+      $$self{'data'}{$ele} = undef;
+      $$self{'data'}{$ele} = dclone($$self{'raw'}{$ele})
+        if (defined $$self{'raw'}{$ele});
    }
 
    # Merge in each default.
 
    my $NDS = $self->nds();
-   foreach my $def (@{ $$self{"def"} }) {
-      if ($$self{"list"}) {
+   foreach my $def (@{ $$self{'def'} }) {
+      if ($$self{'list'}) {
          my($defele,$ruleset,@cond) = @$def;
          my $nds  = _ele_nds($self,$ele);
          if ($NDS->test_conditions($nds,@cond)) {
-            my $tmp = $$self{"data"}[$ele];
-            $NDS->merge($tmp,dclone($defele),$ruleset);
-            $$self{"data"}[$ele] = $tmp;
+            my $tmp = $$self{'data'}[$ele];
+            if (defined($tmp)) {
+               $NDS->merge($tmp,dclone($defele),$ruleset);
+            } else {
+               $tmp = dclone($defele);
+            }
+            $$self{'data'}[$ele] = $tmp;
          }
 
       } else {
          my($e,$defele,$ruleset,@cond) = @$def;
          my $nds  = _ele_nds($self,$ele);
          if ($NDS->test_conditions($nds,@cond)) {
-            my $tmp = $$self{"data"}{$ele};
-            $NDS->merge($tmp,dclone($defele),$ruleset);
-            $$self{"data"}{$ele} = $tmp;
+            my $tmp = $$self{'data'}{$ele};
+            if (defined($tmp)) {
+               $NDS->merge($tmp,dclone($defele),$ruleset);
+            } else {
+               $tmp = dclone($defele);
+            }
+            $$self{'data'}{$ele} = $tmp;
          }
       }
    }
@@ -367,7 +387,7 @@ sub _ele_nonempty {
       return undef;
    }
    $val = 1-$val;
-   $$self{"elesnh"}{$ele} = $val;
+   $$self{'elesnh'}{$ele} = $val;
    return $val;
 }
 
@@ -381,10 +401,10 @@ sub _ele_nds {
    my($self,$ele,$raw,$noconstruct) = @_;
 
    if ($raw) {
-      if ($$self{"list"}) {
-         return $$self{"raw"}[$ele];
+      if ($$self{'list'}) {
+         return $$self{'raw'}[$ele];
       } else {
-         return $$self{"raw"}{$ele};
+         return $$self{'raw'}{$ele};
       }
    }
 
@@ -395,17 +415,17 @@ sub _ele_nds {
       return undef  if ($self->err());
    }
 
-   if ($$self{"list"}) {
-      return $$self{"data"}[$ele];
+   if ($$self{'list'}) {
+      return $$self{'data'}[$ele];
    } else {
-      return $$self{"data"}{$ele};
+      return $$self{'data'}{$ele};
    }
 }
 
 sub _ele_exists {
    my($self,$ele) = @_;
-   _eles($self,"construct");
-   return 1  if (exists $$self{"elesxh"}{$ele});
+   _eles($self,'construct');
+   return 1  if (exists $$self{'elesxh'}{$ele});
    return 0;
 }
 
@@ -414,7 +434,7 @@ sub _ele_empty {
    return 1  if (! _ele_exists($self,$ele));
    _ele($self,$ele);
    _ele_nonempty($self,$ele);
-   return 1-$$self{"elesnh"}{$ele};
+   return 1-$$self{'elesnh'}{$ele};
 }
 
 ###############################################################################
@@ -423,36 +443,36 @@ sub _ele_empty {
 
 sub default_element {
    my($self,@args)  = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
    # For hashes, get the element
 
    my $ele;
-   if (! $$self{"list"}) {
+   if (! $$self{'list'}) {
       if (! @args) {
-         $$self{"err"}    = "nmedef01";
-         $$self{"errmsg"} = "Element name required for hashes";
+         $$self{'err'}    = 'nmedef01';
+         $$self{'errmsg'} = 'Element name required for hashes';
          return;
       }
       $ele = shift(@args);
 
-      if (! exists $$self{"raw"}{$ele}) {
-         $$self{"err"}    = "nmedef02";
-         $$self{"errmsg"} = "The named element does not exist: $ele";
+      if (! exists $$self{'raw'}{$ele}) {
+         $$self{'err'}    = 'nmedef02';
+         $$self{'errmsg'} = "The named element does not exist: $ele";
          return;
       }
    }
 
    # Ruleset, conditions
 
-   my $ruleset = "default";
+   my $ruleset = 'default';
    my @cond;
 
    if ( ($#args % 2) == 0) {
@@ -465,8 +485,8 @@ sub default_element {
 
    my $NDS = $self->nds();
    if (! $NDS->ruleset_valid($ruleset)) {
-      $$self{"err"}    = "nmedef03";
-      $$self{"errmsg"} = "An invalid ruleset specified for merging " .
+      $$self{'err'}    = 'nmedef03';
+      $$self{'errmsg'} = 'An invalid ruleset specified for merging ' .
         "defaults: $ruleset";
       return;
    }
@@ -475,9 +495,9 @@ sub default_element {
    while (@tmp) {
       my $path = shift(@tmp);
       my $val  = shift(@tmp);
-      if (! $NDS->get_structure($path,"valid")) {
-         $$self{"err"}    = "nmedef04";
-         $$self{"errmsg"} = "An invalid path specified in a default " .
+      if (! $NDS->get_structure($path,'valid')) {
+         $$self{'err'}    = 'nmedef04';
+         $$self{'errmsg'} = 'An invalid path specified in a default ' .
            "condition: $path";
          return;
       }
@@ -486,46 +506,47 @@ sub default_element {
    # Move the default element into the list of defaults.
 
    my @def;
-   if ($$self{"list"}) {
-      if (! defined $$self{"raw"}[0]  ||
-          $NDS->empty($$self{"raw"}[0])) {
-         $$self{"err"}    = "ndsdef06";
-         $$self{"errmsg"} = "An undefined/empty element may not be used as " .
-           "a default.";
+   if ($$self{'list'}) {
+      if (! defined $$self{'raw'}[0]  ||
+          $NDS->empty($$self{'raw'}[0])) {
+         $$self{'err'}    = 'ndsdef06';
+         $$self{'errmsg'} = 'An undefined/empty element may not be used as ' .
+           'a default.';
          return;
       }
-      push(@def,splice(@{ $$self{"raw"} },0,1));
+      push(@def,splice(@{ $$self{'raw'} },0,1));
 
    } else {
       push(@def,$ele);
-      push(@def,$$self{"raw"}{$ele});
-      delete $$self{"raw"}{$ele};
+      push(@def,$$self{'raw'}{$ele});
+      delete $$self{'raw'}{$ele};
    }
+   $$self{'elesx'} = undef;
    push(@def,$ruleset,@cond);
-   push(@{ $$self{"def"} },[@def]);
+   push(@{ $$self{'def'} },[@def]);
    return;
 }
 
 sub is_default_value {
    my($self,$ele,$path) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
    if (! $self->ele($ele,1)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
+      $$self{'err'}    = 'nmeele01';
+      $$self{'errmsg'} = "The specified element does not exist: $ele";
       return;
    }
 
    if (! $self->path_valid($path)) {
-      $$self{"err"}    = "nmeacc03";
-      $$self{"errmsg"} = "Attempt to access data with an invalid path: $path";
+      $$self{'err'}    = 'nmeacc03';
+      $$self{'errmsg'} = "Attempt to access data with an invalid path: $path";
       return undef;
    }
 
@@ -535,8 +556,8 @@ sub is_default_value {
    my $val = $self->value($ele,$path);
    if ($self->err()  ||
        ! defined $val) {
-      $$self{"err"}    = "";
-      $$self{"errmsg"} = "";
+      $$self{'err'}    = '';
+      $$self{'errmsg'} = '';
       return 0;
    }
 
@@ -548,8 +569,8 @@ sub is_default_value {
    my $raw = $NDS->value($nds,$path);
    if ($NDS->err()  ||
        ! defined $raw) {
-      $$NDS{"err"}    = "";
-      $$NDS{"errmsg"} = "";
+      $$NDS{'err'}    = '';
+      $$NDS{'errmsg'} = '';
       return 1;
    }
 
@@ -574,44 +595,45 @@ sub is_default_value {
 
 sub eles {
    my($self,$exists) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
 
    if ($exists) {
-      _eles($self,"construct");
+      _eles($self,'construct');
       return undef  if ($self->err());
-      return @{ $$self{"elesx"} };
+      return @{ $$self{'elesx'} };
    } else {
       _eles($self);
       return undef  if ($self->err());
-      return @{ $$self{"elesn"} };
+      return @{ $$self{'elesn'} };
    }
 }
 
 sub ele {
    my($self,$ele,$exists) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
+   # Return 0 if it doesn't exist
+   if ($$self{'list'}) {
+      return 0  if (! defined $$self{'raw'}[$ele]);
+   } else {
+      return 0  if (! exists $$self{'raw'}{$ele});
+   }
+
    if ($exists) {
-      if ($$self{"list"}) {
-         return 1  if (defined $$self{"raw"}[$ele]);
-         return 0;
-      } else {
-         return 1  if (exists $$self{"raw"}{$ele});
-         return 0;
-      }
+      return 1;
 
    } else {
-      return $$self{"elesnh"}{$ele}  if (exists $$self{"elesnh"}{$ele});
+      return $$self{'elesnh'}{$ele}  if (exists $$self{'elesnh'}{$ele});
       _ele_nonempty($self,$ele);
-      return $$self{"elesnh"}{$ele};
+      return $$self{'elesnh'}{$ele};
    }
 }
 
@@ -622,12 +644,12 @@ sub ele {
 sub which {
    my($self,@cond)  = @_;
    my $NDS          = nds($self);
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
@@ -635,9 +657,9 @@ sub which {
    # an even number of values.
 
    if (($#cond % 2) == 0) {
-      $$self{"err"}    = "nmeacc01";
-      $$self{"errmsg"} = "When specifying conditions, an even number of " .
-        "arguments is required.";
+      $$self{'err'}    = 'nmeacc01';
+      $$self{'errmsg'} = 'When specifying conditions, an even number of ' .
+        'arguments is required.';
       return ();
    }
 
@@ -645,9 +667,9 @@ sub which {
    while (@tmp) {
       my $path = shift(@tmp);
       shift(@tmp);
-      if (! $NDS->get_structure($path,"valid")) {
-         $$self{"err"}    = "nmeacc02";
-         $$self{"errmsg"} = "When specifying conditions, a valid path is " .
+      if (! $NDS->get_structure($path,'valid')) {
+         $$self{'err'}    = 'nmeacc02';
+         $$self{'errmsg'} = 'When specifying conditions, a valid path is ' .
            "required: $path";
          return ();
       }
@@ -678,9 +700,9 @@ sub which {
 
 sub path_valid {
    my($self,$path) = @_;
-   my $NDS = $$self{"nds"};
+   my $NDS = $$self{'nds'};
 
-   return $NDS->get_structure($path,"valid");
+   return $NDS->get_structure($path,'valid');
 }
 
 ###############################################################################
@@ -689,37 +711,37 @@ sub path_valid {
 
 sub value {
    my($self,$ele,$path,$copy,$raw) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
    $copy            = 0  if (! $copy);
    $raw             = 0  if (! $raw);
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
    if (! $self->ele($ele,1)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
+      $$self{'err'}    = 'nmeele01';
+      $$self{'errmsg'} = "The specified element does not exist: $ele";
       return;
    }
 
-   my $NDS = $$self{"nds"};
-   if (! $NDS->get_structure($path,"valid")) {
-      $$self{"err"}    = "nmeacc03";
-      $$self{"errmsg"} = "Attempt to access data with an invalid path: $path";
+   my $NDS = $$self{'nds'};
+   if (! $NDS->get_structure($path,'valid')) {
+      $$self{'err'}    = 'nmeacc03';
+      $$self{'errmsg'} = "Attempt to access data with an invalid path: $path";
       return undef;
    }
 
    my $nds = _ele_nds($self,$ele,$raw);
    my $val = $NDS->value($nds,$path);
    if ($NDS->err()) {
-      $$NDS{"err"}     = "";
-      $$NDS{"errmsg"}  = "";
-      $$self{"err"}    = "nmeacc04";
-      $$self{"errmsg"} = "The path does not exist in this element: $ele: $path";
+      $$NDS{'err'}     = '';
+      $$NDS{'errmsg'}  = '';
+      $$self{'err'}    = 'nmeacc04';
+      $$self{'errmsg'} = "The path does not exist in this element: $ele: $path";
       return undef;
    }
 
@@ -732,36 +754,36 @@ sub value {
 
 sub keys {
    my($self,$ele,$path,$empty,$raw) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
    $empty           = 0  if (! $empty);
    $raw             = 0  if (! $raw);
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
-   my $NDS = $$self{"nds"};
-   if (! $NDS->get_structure($path,"valid")) {
-      $$self{"err"}    = "nmeacc03";
-      $$self{"errmsg"} = "Attempt to access data with an invalid path: $path";
+   my $NDS = $$self{'nds'};
+   if (! $NDS->get_structure($path,'valid')) {
+      $$self{'err'}    = 'nmeacc03';
+      $$self{'errmsg'} = "Attempt to access data with an invalid path: $path";
       return undef;
    }
 
    my $nds = _ele_nds($self,$ele,$raw);
    my $val = $NDS->value($nds,$path);
    if ($NDS->err()) {
-      $$NDS{"err"}     = "";
-      $$NDS{"errmsg"}  = "";
-      $$self{"err"}    = "nmeacc04";
-      $$self{"errmsg"} = "The path does not exist in this element: $ele: $path";
+      $$NDS{'err'}     = '';
+      $$NDS{'errmsg'}  = '';
+      $$self{'err'}    = 'nmeacc04';
+      $$self{'errmsg'} = "The path does not exist in this element: $ele: $path";
       return undef;
    }
 
    my @val;
-   if      (ref($val) eq "HASH") {
+   if      (ref($val) eq 'HASH') {
       foreach my $k (sort keys %$val) {
          my $v  = $$val{$k};
          my $v2 = $v;
@@ -770,7 +792,7 @@ sub keys {
                              $empty );
       }
 
-   } elsif (ref($val) eq "ARRAY") {
+   } elsif (ref($val) eq 'ARRAY') {
       for (my $i=0; $i<=$#$val; $i++) {
          my $v  = $$val[$i];
          my $v2 = $v;
@@ -782,8 +804,8 @@ sub keys {
    } elsif (! defined($val)) {
 
    } else {
-      $$self{"err"}    = "nmeacc05";
-      $$self{"errmsg"} = "Keys method may not be used with a scalar path: " .
+      $$self{'err'}    = 'nmeacc05';
+      $$self{'errmsg'} = 'Keys method may not be used with a scalar path: ' .
         "$path";
    }
 
@@ -792,37 +814,37 @@ sub keys {
 
 sub values {
    my($self,$ele,$path,$empty,$copy,$raw) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
    $empty           = 0  if (! $empty);
    $copy            = 0  if (! $copy);
    $raw             = 0  if (! $raw);
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
-   my $NDS = $$self{"nds"};
-   if (! $NDS->get_structure($path,"valid")) {
-      $$self{"err"}    = "nmeacc03";
-      $$self{"errmsg"} = "Attempt to access data with an invalid path: $path";
+   my $NDS = $$self{'nds'};
+   if (! $NDS->get_structure($path,'valid')) {
+      $$self{'err'}    = 'nmeacc03';
+      $$self{'errmsg'} = "Attempt to access data with an invalid path: $path";
       return undef;
    }
 
    my $nds = _ele_nds($self,$ele,$raw);
    my $val = $NDS->value($nds,$path);
    if ($NDS->err()) {
-      $$NDS{"err"}     = "";
-      $$NDS{"errmsg"}  = "";
-      $$self{"err"}    = "nmeacc04";
-      $$self{"errmsg"} = "The path does not exist in this element: $ele: $path";
+      $$NDS{'err'}     = '';
+      $$NDS{'errmsg'}  = '';
+      $$self{'err'}    = 'nmeacc04';
+      $$self{'errmsg'} = "The path does not exist in this element: $ele: $path";
       return undef;
    }
 
    my @val;
-   if      (ref($val) eq "HASH") {
+   if      (ref($val) eq 'HASH') {
       foreach my $k (sort (CORE::keys %$val)) {
          my $v  = $$val{$k};
          my $v2 = $v;
@@ -837,7 +859,7 @@ sub values {
          }
       }
 
-   } elsif (ref($val) eq "ARRAY") {
+   } elsif (ref($val) eq 'ARRAY') {
       for (my $i=0; $i<=$#$val; $i++) {
          my $v  = $$val[$i];
          my $v2 = $v;
@@ -855,8 +877,8 @@ sub values {
    } elsif (! defined($val)) {
 
    } else {
-      $$self{"err"}    = "nmeacc06";
-      $$self{"errmsg"} = "Values method may not be used with a scalar path: " .
+      $$self{'err'}    = 'nmeacc06';
+      $$self{'errmsg'} = 'Values method may not be used with a scalar path: ' .
         "$path";
    }
 
@@ -869,20 +891,20 @@ sub values {
 
 sub path_values {
    my($self,$path,$empty,$copy) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
-   my $NDS          = $$self{"nds"};
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
+   my $NDS          = $$self{'nds'};
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
-   if (! $NDS->get_structure($path,"valid")) {
-      $$self{"err"}    = "nmeacc03";
-      $$self{"errmsg"} = "Attempt to access data with an invalid path: $path";
-      return undef;
+   if (! $NDS->get_structure($path,'valid')) {
+      $$self{'err'}    = 'nmeacc03';
+      $$self{'errmsg'} = "Attempt to access data with an invalid path: $path";
+      return;
    }
 
    my @eles;
@@ -896,10 +918,10 @@ sub path_values {
    foreach my $ele (@eles) {
 
       my $nds = _ele_nds($self,$ele);
-      my $val = $NDS->value($nds,$path);
+      my $val = $NDS->value($nds,$path,0,1);
       if ($NDS->err()) {
-         $$NDS{"err"}     = "";
-         $$NDS{"errmsg"}  = "";
+         $$NDS{'err'}     = '';
+         $$NDS{'errmsg'}  = '';
          next;
       }
 
@@ -911,25 +933,70 @@ sub path_values {
 }
 
 ###############################################################################
+# PATH_IN_USE METHOD
+###############################################################################
+
+sub path_in_use {
+   my($self,$path,$empty) = @_;
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
+   my $NDS          = $$self{'nds'};
+
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
+      return;
+   }
+
+   if (! $NDS->get_structure($path,'valid')) {
+      $$self{'err'}    = 'nmeacc03';
+      $$self{'errmsg'} = "Attempt to access data with an invalid path: $path";
+      return undef;
+   }
+
+   my @eles;
+   if ($empty) {
+      @eles = $self->eles(1);
+   } else {
+      @eles = $self->eles();
+   }
+
+   foreach my $ele (@eles) {
+
+      my $nds = _ele_nds($self,$ele);
+      my $val = $NDS->value($nds,$path,0,1);
+      if ($NDS->err()) {
+         $$NDS{'err'}     = '';
+         $$NDS{'errmsg'}  = '';
+         next;
+      }
+
+      return 1  if (defined $val);
+   }
+
+   return 0;
+}
+
+###############################################################################
 # DELETE_ELE METHOD
 ###############################################################################
 
 sub delete_ele {
    my($self,$ele) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
    # Test to see if the element exists.
 
    if (! _ele_exists($self,$ele)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
+      $$self{'err'}    = 'nmeele01';
+      $$self{'errmsg'} = "The specified element does not exist: $ele";
       return;
    }
 
@@ -947,28 +1014,28 @@ sub delete_ele {
 sub _delete_ele {
    my($self,$ele,$leaveraw) = @_;
 
-   if ($$self{"list"}  &&  $$self{"ordered"}) {
+   if ($$self{'list'}  &&  $$self{'ordered'}) {
 
       #
       # Delete an ordered list element (leaves an undef placeholder).
       #
 
-      $$self{"data"}[$ele] = undef  if (defined $$self{"data"}[$ele]);
-      $$self{"raw"}[$ele]  = undef  if (defined $$self{"raw"}[$ele]  &&
+      $$self{'data'}[$ele] = undef  if (defined $$self{'data'}[$ele]);
+      $$self{'raw'}[$ele]  = undef  if (defined $$self{'raw'}[$ele]  &&
                                         ! $leaveraw);
 
-   } elsif ($$self{"list"}) {
+   } elsif ($$self{'list'}) {
 
       #
       # Delete an unordered list element (removes it entirely)
       #
 
-      if ($#{ $$self{"data"} } >= $ele) {
-         splice( @{ $$self{"data"} },$ele,1);
+      if ($#{ $$self{'data'} } >= $ele) {
+         splice( @{ $$self{'data'} },$ele,1);
       }
 
       if (! $leaveraw) {
-         splice( @{ $$self{"raw"} },$ele,1);
+         splice( @{ $$self{'raw'} },$ele,1);
       }
 
    } else {
@@ -977,14 +1044,16 @@ sub _delete_ele {
       # Delete a hash element
       #
 
-      delete $$self{"data"}{$ele};
-      delete $$self{"raw"}{$ele}  unless ($leaveraw);
+      delete $$self{'data'}{$ele};
+      if (! $leaveraw) {
+         delete $$self{'raw'}{$ele};
+      }
    }
 
-   $$self{"elesx"}      = undef;
-   $$self{"elesxh"}     = {};
-   $$self{"elesn"}      = undef;
-   $$self{"elesnh"}     = undef;
+   $$self{'elesx'}      = undef;
+   $$self{'elesxh'}     = {};
+   $$self{'elesn'}      = undef;
+   $$self{'elesnh'}     = undef;
 }
 
 ###############################################################################
@@ -993,28 +1062,28 @@ sub _delete_ele {
 
 sub rename_ele {
    my($self,$ele,$newele) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
-   return  if ($$self{"list"}  &&  ! $$self{"ordered"});
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
+   return  if ($$self{'list'}  &&  ! $$self{'ordered'});
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
    # Test to see if the element exists and new element doesn't (or is empty).
 
    if (! _ele_exists($self,$ele)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
+      $$self{'err'}    = 'nmeele01';
+      $$self{'errmsg'} = "The specified element does not exist: $ele";
       return;
    }
 
    if (_ele_exists($self,$newele)  &&
        ! _ele_empty($self,$newele)) {
-      $$self{"err"}    = "nmeele02";
-      $$self{"errmsg"} = "Attempt to overwrite an existing element: $newele";
+      $$self{'err'}    = 'nmeele02';
+      $$self{'errmsg'} = "Attempt to overwrite an existing element: $newele";
       return;
    }
 
@@ -1034,27 +1103,27 @@ sub _rename_ele {
 
    # Move both the data and raw elements.
 
-   if ($$self{"list"}) {
-      if (defined $$self{"data"}[$ele]) {
-         $$self{"data"}[$newele] = $$self{"data"}[$ele];
-         $$self{"data"}[$ele]    = undef;
+   if ($$self{'list'}) {
+      if (defined $$self{'data'}[$ele]) {
+         $$self{'data'}[$newele] = $$self{'data'}[$ele];
+         $$self{'data'}[$ele]    = undef;
       }
-      $$self{"raw"}[$newele]  = $$self{"raw"}[$ele];
-      $$self{"raw"}[$ele]     = undef;
+      $$self{'raw'}[$newele]  = $$self{'raw'}[$ele];
+      $$self{'raw'}[$ele]     = undef;
 
    } else {
-      if (exists $$self{"data"}{$ele}) {
-         $$self{"data"}{$newele} = $$self{"data"}{$ele};
-         delete $$self{"data"}{$ele};
+      if (exists $$self{'data'}{$ele}) {
+         $$self{'data'}{$newele} = $$self{'data'}{$ele};
+         delete $$self{'data'}{$ele};
       }
-      $$self{"raw"}{$newele}  = $$self{"raw"}{$ele};
-      delete $$self{"raw"}{$ele};
+      $$self{'raw'}{$newele}  = $$self{'raw'}{$ele};
+      delete $$self{'raw'}{$ele};
    }
 
-   $$self{"elesx"}      = undef;
-   $$self{"elesxh"}     = {};
-   $$self{"elesn"}      = undef;
-   $$self{"elesnh"}     = undef;
+   $$self{'elesx'}      = undef;
+   $$self{'elesxh'}     = {};
+   $$self{'elesn'}      = undef;
+   $$self{'elesnh'}     = undef;
 }
 
 ###############################################################################
@@ -1063,21 +1132,21 @@ sub _rename_ele {
 
 sub add_ele {
    my($self,@args) = @_;
-   $$self{"err"}    = "";
-   $$self{"errmsg"} = "";
+   $$self{'err'}    = '';
+   $$self{'errmsg'} = '';
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
    # Parse arguments
 
    my($ele,$nds,$new);
-   $ele = "";
+   $ele = '';
 
-   if ($$self{"list"}) {
+   if ($$self{'list'}) {
       if ($args[0] =~ /^\d+$/) {
          ($ele,$nds,$new) = @args;
       } else {
@@ -1093,10 +1162,10 @@ sub add_ele {
    my $NDS = $self->nds();
    $NDS->check_structure($nds,$new);
    if ($NDS->err()) {
-      $$NDS{"err"}     = "";
-      $$NDS{"errmsg"}  = "";
-      $$self{"err"}    = "nmends01";
-      $$self{"errmsg"} = "The NDS has an invalid structure.";
+      $$NDS{'err'}     = '';
+      $$NDS{'errmsg'}  = '';
+      $$self{'err'}    = 'nmends01';
+      $$self{'errmsg'} = 'The NDS has an invalid structure.';
       return;
    }
 
@@ -1109,7 +1178,7 @@ sub add_ele {
 sub _add_ele {
    my($self,$ele,$nds) = @_;
 
-   if ($$self{"list"}  &&  ! $$self{"ordered"}) {
+   if ($$self{'list'}  &&  ! $$self{'ordered'}) {
 
       # For an unordered list
       #    If $ele is given
@@ -1120,8 +1189,8 @@ sub _add_ele {
       if ($ele) {
 
          if (! _ele_exists($self,$ele)) {
-            $$self{"err"}    = "nmeele04";
-            $$self{"errmsg"} = "Attempt to add element to an unordered list " .
+            $$self{'err'}    = 'nmeele04';
+            $$self{'errmsg'} = 'Attempt to add element to an unordered list ' .
               "using a non-existant element: $ele";
             return;
          }
@@ -1131,7 +1200,7 @@ sub _add_ele {
          _add_element_push($self,$nds);
       }
 
-   } elsif ($$self{"list"}) {
+   } elsif ($$self{'list'}) {
 
       # For an ordered list
       #    If $ele is given
@@ -1178,37 +1247,37 @@ sub _add_ele {
       } elsif ($ele  &&  ! _ele_exists($self,$ele)) {
          _add_element_sethash($self,$ele,$nds);
       } else {
-         $$self{"err"}    = "nmeele02";
-         $$self{"errmsg"} = "Attempt to overwrite an existing element: $ele";
+         $$self{'err'}    = 'nmeele02';
+         $$self{'errmsg'} = "Attempt to overwrite an existing element: $ele";
          return;
       }
    }
 
-   $$self{"elesx"}      = undef;
-   $$self{"elesxh"}     = {};
-   $$self{"elesn"}      = undef;
-   $$self{"elesnh"}     = undef;
+   $$self{'elesx'}      = undef;
+   $$self{'elesxh'}     = {};
+   $$self{'elesn'}      = undef;
+   $$self{'elesnh'}     = undef;
 }
 
 sub _add_element_setlist {
    my($self,$ele,$nds) = @_;
 
-   $$self{"raw"}[$ele] = $nds;
+   $$self{'raw'}[$ele] = $nds;
 }
 
 sub _add_element_insert {
    my($self,$ele,$nds) = @_;
 
-   splice(@{ $$self{"raw"} },$ele,0,$nds);
-   if ($#{ $$self{"data"} } >= $ele) {
-      splice(@{ $$self{"data"} },$ele,0,undef);
+   splice(@{ $$self{'raw'} },$ele,0,$nds);
+   if ($#{ $$self{'data'} } >= $ele) {
+      splice(@{ $$self{'data'} },$ele,0,undef);
    }
 }
 
 sub _add_element_push {
    my($self,$nds) = @_;
 
-   my $n = $#{ $$self{"raw"} };
+   my $n = $#{ $$self{'raw'} };
    $n++;
    _add_element_setlist($self,$n,$nds);
 }
@@ -1216,7 +1285,7 @@ sub _add_element_push {
 sub _add_element_sethash {
    my($self,$ele,$nds) = @_;
 
-   $$self{"raw"}{$ele}  = $nds;
+   $$self{'raw'}{$ele}  = $nds;
 }
 
 ###############################################################################
@@ -1226,76 +1295,77 @@ sub _add_element_sethash {
 sub update_ele {
    my($self,$ele,$path,$val,$new,$ruleset) = @_;
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
    # Check to make sure $ele is valid (it need only exist)
 
    if (! _ele_exists($self,$ele)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
+      $$self{'err'}    = 'nmeele01';
+      $$self{'errmsg'} = "The specified element does not exist: $ele";
       return;
    }
 
    # If $val is not passed in, erase the path.
 
    my $NDS = $self->nds();
-   my $nds = $$self{"raw"}{$ele};
+   my $nds = $$self{'raw'}{$ele};
 
    if (! defined $val) {
       $NDS->erase($nds,$path);
       if ($NDS->err()) {
-         $$NDS{"err"}     = "";
-         $$NDS{"errmsg"}  = "";
-         $$self{"err"}    = "nmends02";
-         $$self{"errmsg"} = "Problem encountered while erasing a path: $path";
+         $$NDS{'err'}     = '';
+         $$NDS{'errmsg'}  = '';
+         $$self{'err'}    = 'nmends02';
+         $$self{'errmsg'} = "Problem encountered while erasing a path: $path";
       }
-      return;
-   }
 
-   # Check new/ruleset values
+   } else {
 
-   if (! defined $ruleset  &&
-       defined $new  &&
-       $NDS->ruleset_valid($new)) {
-      $ruleset = $new;
-      $new = "";
-   }
+      # Check new/ruleset values
 
-   $ruleset = "replace"  if (! $ruleset);
+      if (! defined $ruleset  &&
+          defined $new  &&
+          $NDS->ruleset_valid($new)) {
+         $ruleset = $new;
+         $new = '';
+      }
 
-   # Merge in the new value
+      $ruleset = 'replace'  if (! $ruleset);
 
-   if (! $NDS->ruleset_valid($ruleset)) {
-      $$self{"err"}    = "ndserr01";
-      $$self{"errmsg"} = "An invalid ruleset was passed in: $ruleset";
-      return;
-   }
+      # Merge in the new value
 
-   $NDS->merge_path($nds,$val,$path,$ruleset,$new);
+      if (! $NDS->ruleset_valid($ruleset)) {
+         $$self{'err'}    = 'ndserr01';
+         $$self{'errmsg'} = "An invalid ruleset was passed in: $ruleset";
+         return;
+      }
 
-   if ($NDS->err()) {
-      $$NDS{"err"}     = "";
-      $$NDS{"errmsg"}  = "";
-      $$self{"err"}    = "nmends03";
-      $$self{"errmsg"} = "The value had an invalid structure.";
-      return;
+      $NDS->merge_path($nds,$val,$path,$ruleset,$new);
+
+      if ($NDS->err()) {
+         $$NDS{'err'}     = '';
+         $$NDS{'errmsg'}  = '';
+         $$self{'err'}    = 'nmends03';
+         $$self{'errmsg'} = 'The value had an invalid structure.';
+         return;
+      }
    }
 
    # Update status information
 
-   $$self{"elesx"}      = undef;
-   $$self{"elesxh"}     = {};
-   $$self{"elesn"}      = undef;
-   $$self{"elesnh"}     = undef;
+   $$self{'elesx'}      = undef;
+   $$self{'elesxh'}     = {};
+   $$self{'elesn'}      = undef;
+   $$self{'elesnh'}     = undef;
 
-   if ($$self{"list"}) {
-      $$self{"data"}[$ele] = undef;
+   if ($$self{'list'}) {
+      $$self{'data'}[$ele] = undef;
    } else {
-      delete $$self{"data"}{$ele};
+      delete $$self{'data'}{$ele};
    }
 }
 
@@ -1306,17 +1376,17 @@ sub update_ele {
 sub copy_ele {
    my($self,$ele,$newele) = @_;
 
-   if (! $$self{"file"}) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+   if (! $$self{'file'}) {
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
    # Check to make sure $ele is valid (it need only exist)
 
    if (! _ele_exists($self,$ele)) {
-      $$self{"err"}    = "nmeele01";
-      $$self{"errmsg"} = "The specified element does not exist: $ele";
+      $$self{'err'}    = 'nmeele01';
+      $$self{'errmsg'} = "The specified element does not exist: $ele";
       return;
    }
 
@@ -1333,7 +1403,7 @@ sub copy_ele {
 sub dump {
    my($self,$ele,$path,%opts) = @_;
 
-   my $NDS = $$self{"nds"};
+   my $NDS = $$self{'nds'};
    my $nds = _ele_nds($self,$ele);
    if ($path) {
       $nds = $NDS->value($nds,$path);
@@ -1347,10 +1417,10 @@ sub dump {
 
 sub save {
    my($self,$nobackup) = @_;
-   my $file            = $$self{"file"};
+   my $file            = $$self{'file'};
    if (! $file) {
-      $$self{"err"}    = "nmefil06";
-      $$self{"errmsg"} = "No file set.";
+      $$self{'err'}    = 'nmefil06';
+      $$self{'errmsg'} = 'No file set.';
       return;
    }
 
@@ -1358,8 +1428,8 @@ sub save {
 
    if (! $nobackup) {
       if (! rename($file,"$file.bak")) {
-         $$self{"err"}    = "nmefil07";
-         $$self{"errmsg"} = "Unable to backup data file: $!";
+         $$self{'err'}    = 'nmefil07';
+         $$self{'errmsg'} = "Unable to backup data file: $!";
          return undef;
       }
    }
@@ -1368,21 +1438,21 @@ sub save {
    # the current raw data.
 
    my $data;
-   if ($$self{"list"}) {
+   if ($$self{'list'}) {
       my(@ele);
-      foreach my $def (@{ $$self{"def"} }) {
+      foreach my $def (@{ $$self{'def'} }) {
          push(@ele,$$def[0]);
       }
-      push(@ele,@{ $$self{"raw"} });
+      push(@ele,@{ $$self{'raw'} });
       $data   = \@ele;
 
    } else {
       my(%ele);
-      foreach my $def (@{ $$self{"def"} }) {
+      foreach my $def (@{ $$self{'def'} }) {
          $ele{$$def[0]} = $$def[1];
       }
-      foreach my $key (CORE::keys %{ $$self{"raw"} }) {
-         $ele{$key} = $$self{"raw"}{$key};
+      foreach my $key (CORE::keys %{ $$self{'raw'} }) {
+         $ele{$key} = $$self{'raw'}{$key};
       }
       $data = \%ele;
    }
@@ -1391,8 +1461,8 @@ sub save {
 
    my $out = new IO::File;
    if (! $out->open(">$file")) {
-      $$self{"err"}    = "nmefil08";
-      $$self{"errmsg"} = "Unable to write data file: $!";
+      $$self{'err'}    = 'nmefil08';
+      $$self{'errmsg'} = "Unable to write data file: $!";
       return undef;
    }
 

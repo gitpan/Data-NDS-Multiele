@@ -20,24 +20,27 @@ use Data::NDS::Multiele;
 
 sub test {
   (@test)=@_;
-  return $obj->ele(@test);
+  @val = $obj->path_in_use(@test);
+  $err = $obj->err();
+  return (@val,$err);
 }
 
 $obj = new Data::NDS::Multiele;
-$obj->file("$tdir/DATA.file.list.yaml");
+$obj->file("$tdir/DATA.data.yaml");
+$obj->default_element("def1","/usedef1","1");
+$obj->default_element("def2","/usedef2","1");
+$obj->default_element("def3","/usedef3","1");
 
 $tests = "
-0 ~ 1
 
-1 ~ 1
+/l1/0 ~ 1 _blank_
 
-2 ~ 1
-
-3 ~ 0
+/l1/1 ~ 0 _blank_
 
 ";
 
-print "ele (list)...\n";
+
+print "path_in_use...\n";
 test_Func(\&test,$tests,$runtests);
 
 1;

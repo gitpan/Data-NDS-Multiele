@@ -280,6 +280,15 @@ method to set it and read the data.
 
 An error code is set if the file cannot be read for any reason.
 
+The file method can have one optional argument. If the structure of the
+NDS is already completely defined, a non-zero second argument can be
+passed in:
+
+   $obj->file(FILE,1);
+
+which will require that the structure of all data be part of the
+structure already defined in the NDS.
+
 =item version
 
    $version = $obj->version;
@@ -423,6 +432,15 @@ in, then even elements with empty values will be included.
 If $copy is non-zero, copies of the values, rather than the values
 themselves, will be stored as values in the returned hash.
 
+=item path_in_use
+
+   $flag = $obj->path_in_use($path [,$empty]);
+
+This will return 1 if the $path is currently used in at least one
+element. By default, only elements with non-empty values will
+be treated as being in use, but if $empty is passed in, then
+an element with an empty value will be treated as in use.
+
 =item delete_ele
 
    $obj->delete_ele($ele);
@@ -525,7 +543,7 @@ print method in the Data::NDS module.
 
 This will save all modified data sources. Although typically called at
 the end of a program, it can safely be called at any time.
- 
+
 =back
 
 Any method not documented here, especially those beginning with an
