@@ -17,11 +17,11 @@ require 5.000;
 use strict;
 use warnings;
 use YAML::Syck;
-use Data::NDS;
+use Data::NDS 3.10;
 use Storable qw(dclone);
 
 use vars qw($VERSION);
-$VERSION = '3.11';
+$VERSION = '3.12';
 
 ###############################################################################
 # BASE METHODS

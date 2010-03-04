@@ -15,7 +15,7 @@ my %requires = (
 
 WriteMakefile(
         NAME             => 'Data::NDS::Multiele',
-        VERSION          => '3.11',
+        VERSION          => '3.12',
         ($] >= 5.001
         ? (ABSTRACT=>'A set of data structures with the same structure',
            AUTHOR  =>'Sullivan Beck (sbeck@cpan.org)')

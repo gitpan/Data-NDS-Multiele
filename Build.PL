@@ -17,7 +17,7 @@ my %build_mods = (
 
 my $build = Module::Build->new(
         license            => 'perl',
-        dist_version       => '3.11',
+        dist_version       => '3.12',
         dist_author        => 'Sullivan Beck <sbeck@cpan.org>',
         module_name        => 'Data::NDS::Multiele',
         dist_abstract      => 'A set of data structures with the same structure',

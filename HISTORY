@@ -49,7 +49,11 @@ Version 3.11  2010-02-05
    Added path_in_use method.
    Performance improvements.
 
-Version 3.12
+Version 3.12  2010-03-04
+   Fixed "use Data::NDS" to require the correct version.
+   Renamed the module to Data::Nested::Multiele and added to the
+      Data::Nested distribution .  3.12 is the final release of
+      Data::NDS::Multiele .
 
 ########################################################################
 # BACKWARDS INCOMPATIBILITIES
